@@ -1,0 +1,44 @@
+Received: by 2002:a05:6808:1c88:b0:3c8:51e8:5640 with SMTP id abc123def456;
+        Mon, 31 Aug 2026 04:15:31 -0700 (PDT)
+Received: from mail-pj1-f41.acme-corp.com (mail-pj1-f41.acme-corp.com [209.85.216.41])
+        by mx.google.com with ESMTPS id g19si1092882pll.12.2026.08.31.04.15.30
+        for <user@example.com>;
+        Mon, 31 Aug 2026 04:15:30 -0700 (PDT)
+Authentication-Results: mx.google.com;
+       dkim=pass header.i=@acme-corp.com header.s=20240101 header.b=AbCdEfGh;
+       spf=pass (google.com: domain of bounce@acme-corp.com designates 209.85.216.41 as permitted sender) smtp.mailfrom=bounce@acme-corp.com;
+       dmarc=pass (p=REJECT sp=REJECT dis=NONE) header.from=acme-corp.com
+From: "Support Team" <support@acme-corp.com>
+To: "Valued Customer" <user@example.com>
+Subject: Your Monthly Acme Statement
+Date: Mon, 31 Aug 2026 04:15:20 -0700
+Message-ID: <20260831041520.12345.support@acme-corp.com>
+Reply-To: "Support Team" <support@acme-corp.com>
+Return-Path: <bounce@acme-corp.com>
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="===============73829104829104=="
+
+--===============73829104829104==
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 7bit
+
+Hello Customer,
+
+Your statement for August 2026 is ready. Please view it at:
+https://portal.acme-corp.com/statements/2026-08
+
+If you have questions, visit https://help.acme-corp.com/faq.
+
+Thanks,
+Acme Support Team
+
+--===============73829104829104==
+Content-Type: application/pdf; name="statement_aug2026.pdf"
+Content-Disposition: attachment; filename="statement_aug2026.pdf"
+Content-Transfer-Encoding: base64
+
+JVBERi0xLjQKJcTl8uXrp/Og0MTGCjQgMCBvYmoKPDwgL0xlbmd0aCA1IDAgUiAvRmlsdGVyIC9G
+bGF0ZURlY29kZSA+PgpzdHJlYW0KeAErVAhUKC5WSFVwVEgsTi4BAA/LBbEKZW5kc3RyZWFtCmVu
+ZG9iago=
+
+--===============73829104829104==--

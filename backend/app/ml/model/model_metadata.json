@@ -1,0 +1,44 @@
+{
+  "model": "TF-IDF (1-2 gram, 40k features) + Logistic Regression",
+  "label_convention": {
+    "0": "legitimate",
+    "1": "phishing/scam/spam"
+  },
+  "training_rows": 71965,
+  "test_rows": 12700,
+  "total_rows_after_dedup": 84665,
+  "dataset_sizes_raw": {
+    "Nazario.csv": 1565,
+    "Nigerian_Fraud.csv": 3332,
+    "CEAS_08.csv": 39154,
+    "SpamAssasin.csv": 5809,
+    "Ling.csv": 2859,
+    "Enron.csv": 29767,
+    "enron_spam_data.csv": 33716
+  },
+  "sources": [
+    "Nazario Phishing Corpus (via github.com/rokibulroni/Phishing-Email-Dataset)",
+    "Nigerian Fraud (419) Emails (same source)",
+    "CEAS 2008 Spam Challenge Corpus (same source)",
+    "SpamAssassin public corpus (same source)",
+    "Ling-Spam corpus (same source)",
+    "Enron-Spam dataset (github.com/MWiechmann/enron_spam_data)"
+  ],
+  "metrics": {
+    "accuracy": 0.9894,
+    "precision": 0.9886,
+    "recall": 0.9912,
+    "f1": 0.9899,
+    "confusion_matrix": [
+      [
+        5955,
+        76
+      ],
+      [
+        59,
+        6610
+      ]
+    ]
+  },
+  "training_time_seconds": 25.7
+}

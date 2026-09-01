@@ -1,0 +1,31 @@
+Received: from relay3.victimmail.com (relay3.victimmail.com [10.0.0.20])
+        by mx.victimmail.com with ESMTP id a112345;
+        Mon, 31 Aug 2026 03:22:15 +0000
+Received: from mail.phish-server.ru (mail.phish-server.ru [91.195.240.12])
+        by relay3.victimmail.com with ESMTP id b223456;
+        Mon, 31 Aug 2026 03:21:50 +0000
+Authentication-Results: mx.victimmail.com;
+       spf=fail (victimmail.com: domain of noreply@fake-paypal-support.com does not designate 91.195.240.12 as permitted sender);
+       dkim=fail header.i=@fake-paypal-support.com;
+       dmarc=fail (p=REJECT) header.from=fake-paypal-support.com
+From: "PayPal Alerts" <noreply@fake-paypal-support.com>
+To: "Another Victim" <victim2@victimmail.com>
+Subject: Action Required: Verify your PayPal identity now!
+Date: Mon, 31 Aug 2026 03:21:30 +0000
+Message-ID: <campaign.55512.2026@phish-server.ru>
+Reply-To: "Support Desk" <phish-collect@gmail.com>
+Return-Path: <bounce@phish-server.ru>
+MIME-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+
+Dear PayPal user,
+
+Your account has been limited due to suspicious activity. Please verify your
+identity immediately by visiting:
+
+https://paypa1-security-verify.com/verify?ref=user2-campaign55512
+
+If you do not verify within 24 hours, your account will be permanently closed.
+
+Regards,
+PayPal Security Team

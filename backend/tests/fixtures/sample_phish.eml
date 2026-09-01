@@ -1,0 +1,45 @@
+Received: from relay2.targetmail.com (relay2.targetmail.com [10.0.0.15])
+        by mx.targetmail.com with ESMTP id z991823;
+        Mon, 31 Aug 2026 01:10:05 +0000
+Received: from mail.attacker-infra.org (mail.attacker-infra.org [185.220.101.5])
+        by relay2.targetmail.com with ESMTP id y88123;
+        Mon, 31 Aug 2026 01:09:40 +0000
+Authentication-Results: mx.targetmail.com;
+       spf=softfail (targetmail.com: domain of spoof@compromised-vps.net does not designate 185.220.101.5 as permitted sender);
+       dkim=fail header.i=@security-paypa1.com;
+       dmarc=fail (p=REJECT) header.from=security-paypa1.com
+From: "PayPal Security Alert" <service@security-paypa1.com>
+To: "Target Victim" <victim@targetmail.com>
+Subject: URGENT: Unauthorized login detected on your account!
+Date: Mon, 31 Aug 2026 01:09:30 +0000
+Message-ID: <attack.99281.2026@attacker-infra.org>
+Reply-To: "Scammer Direct" <dropbox123@gmail.com>
+Return-Path: <spoof@compromised-vps.net>
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="====PHISH_BOUNDARY_982736===="
+
+--====PHISH_BOUNDARY_982736====
+Content-Type: text/html; charset="utf-8"
+Content-Transfer-Encoding: 7bit
+
+<html>
+<body>
+<p>Dear PayPal Customer,</p>
+<p>We detected an unauthorized login attempt from an unknown device.</p>
+<p>Please immediately verify your identity by clicking below:</p>
+<p><a href="https://paypa1-security-verify.com/login?token=abc891723">https://paypa1-security-verify.com/login?token=abc891723</a></p>
+<p>Failure to do so will result in permanent suspension.</p>
+<p>Download and run our urgent security patch tool attached.</p>
+</body>
+</html>
+
+--====PHISH_BOUNDARY_982736====
+Content-Type: application/octet-stream; name="paypal_security_fix.scr"
+Content-Disposition: attachment; filename="paypal_security_fix.scr"
+Content-Transfer-Encoding: base64
+
+TVqQAAMAAAAEAAAA//8AALgAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+AAAAyAAAAA4fug4AtAnNIbgBTM0hVGhpcyBwcm9ncmFtIGNhbm5vdCBiZSBydW4gaW4gRE9TIG1v
+ZGUKJCRQPEFEOjM=
+
+--====PHISH_BOUNDARY_982736====--

@@ -1,0 +1,1 @@
+"""TrashMail AI Backend Application."""
