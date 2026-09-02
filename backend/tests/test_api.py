@@ -66,6 +66,8 @@ def test_analyze_via_eml_file_upload():
 
     # Phase 2 ML & risk fields
     assert "ml_phishing_probability" in data
+    assert "top_phrases" in data
+    assert isinstance(data["top_phrases"], list)
     assert "risk_score" in data
     assert "verdict" in data
     assert "indicators" in data
@@ -98,7 +100,8 @@ def test_analyze_via_json_payload():
         )
     assert response.status_code == 200
     data = response.json()
-    assert "Unauthorized login" in data["subject"]
+
+    assert data["subject"] == "URGENT: Unauthorized login detected on your account!"
     assert data["sender_domain"] == "security-paypa1.com"
     assert data["domain_mismatches"]["reply_to_mismatch"] is True
     assert data["originating_ip"] == "185.220.101.5"
@@ -108,6 +111,9 @@ def test_analyze_via_json_payload():
     assert data["verdict"] == "Phishing/Scam"
     assert data["risk_score"] >= 70
     assert len(data["indicators"]) > 0
+    assert "top_phrases" in data
+    assert isinstance(data["top_phrases"], list)
+    assert len(data["top_phrases"]) > 0
 
     # Phase 3 GeoIP & Threat Intel
     assert data["origin_geo"]["ip"] == "185.220.101.5"

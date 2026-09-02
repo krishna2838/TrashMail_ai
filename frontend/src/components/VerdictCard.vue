@@ -44,6 +44,47 @@
       </div>
     </div>
 
+    <!-- Model Feature Attribution / Top Phrases (Phase 11 - Explainability) -->
+    <div v-if="hasTopPhrases" class="model-explain-section">
+      <button 
+        type="button" 
+        class="explain-toggle-btn"
+        @click="isPhrasesExpanded = !isPhrasesExpanded"
+      >
+        <div class="explain-toggle-left">
+          <Brain :size="16" class="explain-icon" />
+          <h3 class="section-subtitle explain-subtitle">
+            {{ isPhishingLeaning ? 'Why the model flagged this' : 'What looked legitimate' }}
+          </h3>
+          <span class="explain-count-badge">{{ analysis.top_phrases.length }} signals</span>
+        </div>
+        <ChevronUp v-if="isPhrasesExpanded" :size="16" class="toggle-chevron" />
+        <ChevronDown v-else :size="16" class="toggle-chevron" />
+      </button>
+
+      <div v-show="isPhrasesExpanded" class="explain-body">
+        <p class="explain-hint">
+          {{ isPhishingLeaning 
+            ? 'Key words and phrases that pushed the ML classifier toward a phishing verdict:' 
+            : 'Key words and phrases that pushed the ML classifier toward a legitimate verdict:' 
+          }}
+        </p>
+        <div class="phrase-chips-grid">
+          <div 
+            v-for="(item, idx) in analysis.top_phrases" 
+            :key="idx" 
+            :class="['phrase-chip', item.contribution > 0 ? 'chip-phish' : 'chip-legit']"
+            :style="getPhraseStyle(item)"
+          >
+            <span class="phrase-text">"{{ item.phrase }}"</span>
+            <span class="phrase-score">
+              {{ item.contribution > 0 ? `+${item.contribution}` : item.contribution }}
+            </span>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- Extracted Case Fingerprints (Phase 9 - Additive) -->
     <div v-if="hasFingerprints" class="fingerprints-section">
       <h3 class="section-subtitle">Extracted Case Fingerprints</h3>
@@ -144,6 +185,7 @@ import {
   Landmark,
   FileCode,
   LayoutTemplate,
+  Brain,
 } from 'lucide-vue-next'
 import { chatExplain } from '../api/client'
 
@@ -158,6 +200,24 @@ const isExpanded = ref(false)
 const isExplaining = ref(false)
 const explanationText = ref('')
 const explainError = ref(null)
+const isPhrasesExpanded = ref(true)
+
+const hasTopPhrases = computed(() => {
+  return Boolean(props.analysis?.top_phrases && props.analysis.top_phrases.length > 0)
+})
+
+const isPhishingLeaning = computed(() => {
+  return (props.analysis?.ml_phishing_probability ?? 0) >= 0.5
+})
+
+function getPhraseStyle(item) {
+  const abs = Math.min(Math.abs(item.contribution || 0), 2.0)
+  // Subtle scaling: font size from 0.84rem to 0.96rem, slightly stronger border
+  const size = 0.84 + (abs / 2.0) * 0.12
+  return {
+    fontSize: `${size.toFixed(2)}rem`,
+  }
+}
 
 const verdictColor = computed(() => {
   const v = props.analysis.verdict
@@ -361,6 +421,111 @@ async function toggleExplain() {
 .safe-icon {
   color: var(--verdict-safe);
   flex-shrink: 0;
+}
+
+/* Model Feature Attribution Section (Phase 11) */
+.model-explain-section {
+  border-top: 1px solid var(--border-light);
+  padding-top: 18px;
+}
+
+.explain-toggle-btn {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  text-align: left;
+}
+
+.explain-toggle-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.explain-icon {
+  color: var(--accent);
+}
+
+.explain-subtitle {
+  margin-bottom: 0 !important;
+  color: var(--text-main);
+  font-size: 0.98rem;
+  font-weight: 600;
+}
+
+.explain-count-badge {
+  font-size: 0.75rem;
+  background-color: var(--bg-page);
+  color: var(--text-muted);
+  border: 1px solid var(--border-light);
+  padding: 2px 8px;
+  border-radius: 9999px;
+  font-weight: 500;
+}
+
+.toggle-chevron {
+  color: var(--text-muted);
+}
+
+.explain-body {
+  margin-top: 10px;
+}
+
+.explain-hint {
+  font-size: 0.84rem;
+  color: var(--text-muted);
+  margin-bottom: 10px;
+}
+
+.phrase-chips-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.phrase-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.phrase-chip:hover {
+  transform: translateY(-1px);
+}
+
+.chip-phish {
+  background-color: #FEF2F2;
+  color: #DC2626;
+  border: 1px solid #FECACA;
+}
+
+.chip-legit {
+  background-color: #F0FDF4;
+  color: #16A34A;
+  border: 1px solid #BBF7D0;
+}
+
+.phrase-text {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-weight: 600;
+}
+
+.phrase-score {
+  font-size: 0.75rem;
+  opacity: 0.85;
+  font-weight: 500;
+  padding: 1px 4px;
+  border-radius: 3px;
+  background: rgba(0, 0, 0, 0.05);
 }
 
 /* Fingerprints Section (Phase 9) */

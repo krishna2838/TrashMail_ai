@@ -14,7 +14,7 @@ from app.db.history import save_investigation
 from app.geo.geoip import geolocate_ip
 from app.graph.neo4j_client import find_related_emails, save_analysis
 from app.intel.virustotal import check_domain, check_ip
-from app.ml.classifier import classify_text
+from app.ml.classifier import classify_text, explain_classification
 from app.ml.risk_scoring import compute_risk
 from app.parsing.email_parser import parse_email
 from app.parsing.hops import extract_hops, get_originating_ip
@@ -109,6 +109,12 @@ def analyze_email_bytes(raw_bytes: bytes) -> dict[str, Any]:
         body=email_data.get("body_text", ""),
     )
 
+    # 5b. ML explainability — top contributing phrases (read-only analysis of same model)
+    top_phrases = explain_classification(
+        subject=email_data.get("subject", ""),
+        body=email_data.get("body_text", ""),
+    )
+
     # 6. Composite risk scoring (incorporating threat intel)
     risk_result = compute_risk(
         parsed=email_data,
@@ -124,6 +130,7 @@ def analyze_email_bytes(raw_bytes: bytes) -> dict[str, Any]:
         "origin_geo": origin_geo,
         "threat_intel": threat_intel,
         "ml_phishing_probability": risk_result["ml_phishing_probability"],
+        "top_phrases": top_phrases,
         "risk_score": risk_result["risk_score"],
         "verdict": risk_result["verdict"],
         "indicators": list(risk_result["indicators"]),
