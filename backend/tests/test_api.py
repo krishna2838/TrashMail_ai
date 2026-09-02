@@ -180,3 +180,46 @@ def test_graph_visualization_endpoint():
     data = response.json()
     assert data["nodes"] == []
     assert data["edges"] == []
+
+
+def test_history_and_reports_flow():
+    """Test analyze -> history listing -> history detail -> PDF report generation."""
+    benign_path = FIXTURES_DIR / "sample_benign.eml"
+    patches = _patch_vt_and_neo4j()
+    with patches[0], patches[1], patches[2], patches[3]:
+        with open(benign_path, "rb") as f:
+            analyze_resp = client.post(
+                "/api/analyze",
+                files={"file": ("sample_benign.eml", f, "message/rfc822")},
+            )
+    assert analyze_resp.status_code == 200
+    email_hash = analyze_resp.json()["email_hash"]
+
+    # 1. Check history list contains the analyzed email
+    hist_resp = client.get("/api/history")
+    assert hist_resp.status_code == 200
+    hist_items = hist_resp.json()
+    assert any(item["id"] == email_hash for item in hist_items)
+
+    # 2. Check history detail returns full JSON
+    detail_resp = client.get(f"/api/history/{email_hash}")
+    assert detail_resp.status_code == 200
+    assert detail_resp.json()["email_hash"] == email_hash
+    assert detail_resp.json()["subject"] == "Your Monthly Acme Statement"
+
+    # 3. Check PDF report endpoint
+    pdf_resp = client.get(f"/api/reports/{email_hash}.pdf")
+    assert pdf_resp.status_code == 200
+    assert pdf_resp.headers["content-type"] == "application/pdf"
+    assert "attachment" in pdf_resp.headers["content-disposition"]
+    assert pdf_resp.content.startswith(b"%PDF")
+
+
+def test_history_not_found():
+    response = client.get("/api/history/nonexistent_hash_123")
+    assert response.status_code == 404
+
+
+def test_report_not_found():
+    response = client.get("/api/reports/nonexistent_hash_123.pdf")
+    assert response.status_code == 404

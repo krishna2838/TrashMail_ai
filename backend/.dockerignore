@@ -1,0 +1,12 @@
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+tests/
+.git/
+.gitignore
+.env
+app/geo/data/*.mmdb
+app/db/*.sqlite3

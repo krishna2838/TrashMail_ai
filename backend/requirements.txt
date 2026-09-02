@@ -9,3 +9,5 @@ scikit-learn>=1.5.0
 joblib>=1.4.0
 geoip2>=4.8.0
 neo4j>=5.23
+sqlmodel>=0.0.22
+reportlab>=4.2

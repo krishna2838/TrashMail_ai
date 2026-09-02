@@ -10,7 +10,12 @@ class Settings(BaseSettings):
 
     APP_NAME: str = "TrashMail AI"
     MAX_EMAIL_SIZE_BYTES: int = 5_000_000
-    CORS_ORIGINS: list[str] = ["http://localhost:5173"]
+    CORS_ORIGINS: list[str] = [
+        "http://localhost:3000",
+        "http://localhost:5173",
+        "http://127.0.0.1:3000",
+        "http://127.0.0.1:5173",
+    ]
     VIRUSTOTAL_API_KEY: str = ""
     NEO4J_URI: str = "bolt://localhost:7687"
     NEO4J_USER: str = "neo4j"

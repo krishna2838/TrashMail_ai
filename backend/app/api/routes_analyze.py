@@ -10,6 +10,7 @@ from fastapi import APIRouter, HTTPException, Request, status
 from pydantic import BaseModel, Field
 
 from app.core.config import settings
+from app.db.history import save_investigation
 from app.geo.geoip import geolocate_ip
 from app.graph.neo4j_client import find_related_emails, save_analysis
 from app.intel.virustotal import check_domain, check_ip
@@ -212,7 +213,10 @@ async def analyze_email(request: Request) -> dict[str, Any]:
             elif boosted_score >= 35:
                 response["verdict"] = "Suspicious"
 
-        # 11. Cache for chat explain lookups
+        # 11. Persist to SQLite investigation history
+        save_investigation(response)
+
+        # 12. Cache for chat explain lookups
         _cache_analysis(response)
 
         return response
