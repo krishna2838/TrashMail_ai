@@ -7,14 +7,14 @@
           Classifier trained on {{ (modelInfo.total_rows_after_dedup || 84665).toLocaleString() }} real emails from {{ (modelInfo.sources || []).length || 6 }} public datasets — {{ (accuracyPercent).toFixed(1) }}% accuracy
         </span>
         <span v-else>
-          TrashMail AI — Forensic Phishing Intelligence Platform (SIH26106)
+          TraceMail AI — Forensic Phishing Intelligence Platform (SIH26106)
         </span>
         <button v-if="modelInfo" class="details-link" @click="showModal = true">
           [Model Metrics]
         </button>
       </div>
       <div class="footer-links">
-        <span class="copyright">&copy; 2026 TrashMail AI — SIH26106 Hackathon</span>
+        <span class="copyright">&copy; 2026 TraceMail AI — Team Cyber Link (SIH26106)</span>
       </div>
     </div>
 

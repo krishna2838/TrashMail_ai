@@ -3,7 +3,7 @@
     <div class="card-header">
       <div class="title-with-icon">
         <Network :size="20" class="header-icon" />
-        <h2>Infrastructure & Campaign Graph</h2>
+        <h2>{{ title }}</h2>
       </div>
       <div class="header-actions">
         <button 
@@ -51,7 +51,7 @@
       <div ref="networkContainer" class="vis-network-container"></div>
 
       <!-- Empty state banner when only current email exists -->
-      <div v-if="!loading && !error && campaignSize === 0" class="single-email-notice">
+      <div v-if="!loading && !error && campaignSize === 0 && !hideNotice && !graphData" class="single-email-notice">
         <Info :size="16" />
         <span>No connections to other analyzed emails yet — this is the first sighting of this infrastructure.</span>
       </div>
@@ -69,11 +69,27 @@
       </div>
       <div class="legend-item">
         <span class="legend-dot dot-domain"></span>
-        <span class="legend-text">Domain Node</span>
+        <span class="legend-text">Domain</span>
       </div>
       <div class="legend-item">
         <span class="legend-dot dot-ip"></span>
         <span class="legend-text">IP Node</span>
+      </div>
+      <div class="legend-item">
+        <span class="legend-dot dot-upi"></span>
+        <span class="legend-text">UPI ID</span>
+      </div>
+      <div class="legend-item">
+        <span class="legend-dot dot-wallet"></span>
+        <span class="legend-text">Crypto Wallet</span>
+      </div>
+      <div class="legend-item">
+        <span class="legend-dot dot-hash"></span>
+        <span class="legend-text">Attachment Hash</span>
+      </div>
+      <div class="legend-item">
+        <span class="legend-dot dot-template"></span>
+        <span class="legend-text">Template Hash</span>
       </div>
     </div>
   </div>
@@ -88,11 +104,23 @@ import { getGraph } from '../api/client'
 const props = defineProps({
   emailHash: {
     type: String,
-    required: true,
+    default: '',
   },
   campaign: {
     type: Object,
     default: () => ({ related_emails: [], campaign_size: 0 }),
+  },
+  graphData: {
+    type: Object,
+    default: null,
+  },
+  title: {
+    type: String,
+    default: 'Infrastructure & Campaign Graph',
+  },
+  hideNotice: {
+    type: Boolean,
+    default: false,
   },
 })
 
@@ -149,6 +177,34 @@ function getNodeColor(node) {
       highlight: { background: '#DBEAFE', border: '#1D4ED8' },
       hover: { background: '#DBEAFE', border: '#1D4ED8' }
     }
+  } else if (node.type === 'upi') {
+    return { 
+      background: '#F5F3FF', 
+      border: '#7C3AED', 
+      highlight: { background: '#EDE9FE', border: '#7C3AED' },
+      hover: { background: '#EDE9FE', border: '#7C3AED' }
+    }
+  } else if (node.type === 'wallet') {
+    return { 
+      background: '#FFFBEB', 
+      border: '#D97706', 
+      highlight: { background: '#FEF3C7', border: '#D97706' },
+      hover: { background: '#FEF3C7', border: '#D97706' }
+    }
+  } else if (node.type === 'attachment_hash') {
+    return { 
+      background: '#FFF1F2', 
+      border: '#E11D48', 
+      highlight: { background: '#FFE4E6', border: '#E11D48' },
+      hover: { background: '#FFE4E6', border: '#E11D48' }
+    }
+  } else if (node.type === 'template_hash') {
+    return { 
+      background: '#F0FDFA', 
+      border: '#0D9488', 
+      highlight: { background: '#CCFBF1', border: '#0D9488' },
+      hover: { background: '#CCFBF1', border: '#0D9488' }
+    }
   } else {
     // IP
     return { 
@@ -161,12 +217,17 @@ function getNodeColor(node) {
 }
 
 async function loadAndRenderGraph() {
-  if (!props.emailHash) return
+  if (!props.emailHash && !props.graphData) return
   loading.value = true
   error.value = null
 
   try {
-    const data = await getGraph(props.emailHash, 2)
+    let data
+    if (props.graphData) {
+      data = props.graphData
+    } else {
+      data = await getGraph(props.emailHash, 2)
+    }
     const nodesRaw = data.nodes || []
     const edgesRaw = data.edges || []
 
@@ -187,11 +248,19 @@ async function loadAndRenderGraph() {
         labelText = labelText.slice(0, 25) + '...'
       }
 
+      let nodeShape = 'box'
+      if (n.type === 'domain') nodeShape = 'ellipse'
+      else if (n.type === 'ip') nodeShape = 'database'
+      else if (n.type === 'upi') nodeShape = 'diamond'
+      else if (n.type === 'wallet') nodeShape = 'hexagon'
+      else if (n.type === 'attachment_hash') nodeShape = 'box'
+      else if (n.type === 'template_hash') nodeShape = 'box'
+
       return {
         id: n.id,
         label: labelText,
         title: `${n.type.toUpperCase()}: ${n.label || n.id}${n.verdict ? ` [${n.verdict}]` : ''}`,
-        shape: n.type === 'email' ? 'box' : (n.type === 'domain' ? 'ellipse' : 'database'),
+        shape: nodeShape,
         margin: { top: 8, bottom: 8, left: 12, right: 12 },
         borderWidth: isCurrent ? 3 : 1.5,
         color: colorScheme,
@@ -333,9 +402,9 @@ onMounted(() => {
   loadAndRenderGraph()
 })
 
-watch(() => props.emailHash, () => {
+watch([() => props.emailHash, () => props.graphData], () => {
   loadAndRenderGraph()
-})
+}, { deep: true })
 
 onBeforeUnmount(() => {
   if (resizeObserver) {
@@ -520,5 +589,25 @@ onBeforeUnmount(() => {
 .dot-ip {
   background-color: #F3F4F6;
   border: 2px solid #4B5563;
+}
+
+.dot-upi {
+  background-color: #F5F3FF;
+  border: 2px solid #7C3AED;
+}
+
+.dot-wallet {
+  background-color: #FFFBEB;
+  border: 2px solid #D97706;
+}
+
+.dot-hash {
+  background-color: #FFF1F2;
+  border: 2px solid #E11D48;
+}
+
+.dot-template {
+  background-color: #F0FDFA;
+  border: 2px solid #0D9488;
 }
 </style>

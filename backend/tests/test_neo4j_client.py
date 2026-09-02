@@ -151,3 +151,100 @@ def test_get_graph_returns_nodes_and_edges(mock_get_driver):
     assert "edges" in result
     assert isinstance(result["nodes"], list)
     assert isinstance(result["edges"], list)
+
+
+@patch("app.graph.neo4j_client.get_driver")
+def test_save_analysis_persists_fingerprints(mock_get_driver):
+    mock_driver, mock_session = _make_mock_driver()
+    mock_get_driver.return_value = mock_driver
+
+    analysis = {
+        "email_hash": "hash-with-fingerprints",
+        "subject": "Phish with UPI",
+        "sender": "scam@fake.com",
+        "verdict": "Phishing/Scam",
+        "risk_score": 85,
+        "origin_geo": None,
+        "domains": [],
+        "upi_ids": ["scam@okhdfcbank"],
+        "wallet_addresses": ["0x1234567890abcdef1234567890abcdef12345678"],
+        "attachment_hashes": ["e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"],
+        "template_structure_hash": "a1b2c3d4e5f6",
+    }
+
+    save_analysis(analysis)
+
+    mock_session.run.assert_called_once()
+    cypher = mock_session.run.call_args[0][0]
+    call_kwargs = mock_session.run.call_args[1]
+
+    assert "MERGE (u:UPI {id: upi_id})" in cypher
+    assert "MERGE (w:Wallet {address: wallet})" in cypher
+    assert "MERGE (a:AttachmentHash {hash: att_hash})" in cypher
+    assert "MERGE (t:TemplateHash {hash: $template_hash})" in cypher
+    assert call_kwargs["upi_ids"] == ["scam@okhdfcbank"]
+    assert call_kwargs["template_hash"] == "a1b2c3d4e5f6"
+
+
+@patch("app.graph.neo4j_client.get_driver")
+def test_find_related_emails_via_upi_or_wallet(mock_get_driver):
+    mock_driver, mock_session = _make_mock_driver()
+    mock_get_driver.return_value = mock_driver
+
+    mock_record = {
+        "id": "gang-email-2",
+        "subject": "Tax Refund Phish",
+        "verdict": "Phishing/Scam",
+        "shared_via": "upi",
+        "shared_value": "gang.collector@okhdfcbank",
+    }
+    mock_session.run.return_value = [mock_record]
+
+    result = find_related_emails("gang-email-1")
+
+    assert result["campaign_size"] == 1
+    assert result["related_emails"][0]["id"] == "gang-email-2"
+    assert result["related_emails"][0]["shared_via"] == "upi"
+    assert result["related_emails"][0]["shared_value"] == "gang.collector@okhdfcbank"
+
+
+@patch("app.graph.neo4j_client.get_driver")
+def test_get_graph_visualizes_fingerprint_nodes(mock_get_driver):
+    mock_driver, mock_session = _make_mock_driver()
+    mock_get_driver.return_value = mock_driver
+
+    mock_records = [
+        {
+            "eid": "4:0",
+            "node_labels": ["Email"],
+            "node_props": {"id": "email-1", "subject": "Invoice Scam", "verdict": "Phishing/Scam"},
+            "rel_start_eid": "4:0",
+            "rel_end_eid": "4:1",
+            "rel_type": "PAYS_TO",
+        },
+        {
+            "eid": "4:1",
+            "node_labels": ["UPI"],
+            "node_props": {"id": "fraud@ybl"},
+            "rel_start_eid": "4:0",
+            "rel_end_eid": "4:1",
+            "rel_type": "PAYS_TO",
+        },
+        {
+            "eid": "4:2",
+            "node_labels": ["Wallet"],
+            "node_props": {"address": "0x742d35Cc6634C0532925a3b844Bc454e4438f44e"},
+            "rel_start_eid": "4:0",
+            "rel_end_eid": "4:2",
+            "rel_type": "PAYS_TO",
+        },
+    ]
+    mock_session.run.return_value = mock_records
+
+    result = get_graph_for_visualization("email-1")
+    types = {n["type"] for n in result["nodes"]}
+    assert "email" in types
+    assert "upi" in types
+    assert "wallet" in types
+    labels = {n["label"] for n in result["nodes"]}
+    assert "UPI: fraud@ybl" in labels

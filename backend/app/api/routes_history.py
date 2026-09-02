@@ -1,4 +1,4 @@
-"""Investigation history API routes for TrashMail AI."""
+"""Investigation history API routes for TraceMail AI."""
 
 from __future__ import annotations
 

@@ -8,8 +8,9 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     """Core application settings."""
 
-    APP_NAME: str = "TrashMail AI"
+    APP_NAME: str = "TraceMail AI"
     MAX_EMAIL_SIZE_BYTES: int = 5_000_000
+    MAX_BATCH_FILES: int = 20
     CORS_ORIGINS: list[str] = [
         "http://localhost:3000",
         "http://localhost:5173",

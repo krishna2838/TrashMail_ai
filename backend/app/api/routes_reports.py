@@ -1,4 +1,4 @@
-"""Forensic PDF report API routes for TrashMail AI."""
+"""Forensic PDF report API routes for TraceMail AI."""
 
 from __future__ import annotations
 
@@ -48,7 +48,7 @@ async def get_forensic_report(email_hash: str) -> Response:
         ) from exc
 
     short_hash = email_hash[:8] if len(email_hash) >= 8 else email_hash
-    filename = f"trashmail-report-{short_hash}.pdf"
+    filename = f"tracemail-report-{short_hash}.pdf"
 
     return Response(
         content=pdf_bytes,

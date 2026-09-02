@@ -19,6 +19,14 @@ export async function analyzeEmail(payload, isMultipart = false) {
   }
 }
 
+export async function analyzeBatch(formData) {
+  const response = await api.post('/api/analyze/batch', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+    timeout: 120000,
+  })
+  return response.data
+}
+
 export async function getModelInfo() {
   const response = await api.get('/api/model-info')
   return response.data

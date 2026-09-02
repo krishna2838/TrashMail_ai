@@ -1,0 +1,24 @@
+Received: from vps.quick-refund-portal.net (vps.quick-refund-portal.net [194.26.29.102])
+        by mx.targetmail.com with ESMTP id b2002;
+        Wed, 02 Sep 2026 08:30:00 +0000
+Authentication-Results: mx.targetmail.com;
+       spf=pass (targetmail.com: domain of claims@quick-refund-portal.net designates 194.26.29.102 as permitted sender);
+       dkim=none;
+       dmarc=none
+From: "Tax Disbursement" <claims@quick-refund-portal.net>
+To: "Finance Victim" <finance@targetmail.com>
+Subject: Approved Tax Refund Notification #8821
+Date: Wed, 02 Sep 2026 08:30:00 +0000
+Message-ID: <gang2.2002.2026@quick-refund-portal.net>
+MIME-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+
+Notice of Refund Approval:
+
+A refund of Rs 12,450 has been approved for your profile.
+To authenticate and deposit funds, initiate a verification request to our registered UPI endpoint:
+gang.collector@okhdfcbank
+
+Visit: https://quick-refund-portal.net/claim
+
+Disbursement Office

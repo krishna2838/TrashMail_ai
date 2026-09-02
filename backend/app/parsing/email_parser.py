@@ -11,6 +11,8 @@ import re
 from typing import Any
 from urllib.parse import urlparse
 
+from app.parsing.fingerprints import extract_fingerprints
+
 SUSPICIOUS_EXTENSIONS = {
     ".exe",
     ".scr",
@@ -53,8 +55,8 @@ def _clean_url(raw_url: str) -> str:
     return url
 
 
-def _extract_body(msg: email.message.EmailMessage) -> str:
-    """Extract plain text or stripped HTML from email parts."""
+def _extract_body_and_html(msg: email.message.EmailMessage) -> tuple[str, str]:
+    """Extract plain text and raw HTML from email parts."""
     plain_parts: list[str] = []
     html_parts: list[str] = []
 
@@ -98,10 +100,11 @@ def _extract_body(msg: email.message.EmailMessage) -> str:
         elif content_type == "text/html":
             html_parts.append(content)
 
+    raw_html = "\n".join(html_parts) if html_parts else ""
+
     if plain_parts:
         body = "\n".join(plain_parts)
     elif html_parts:
-        raw_html = "\n".join(html_parts)
         # Strip HTML tags and unescape entities
         stripped = HTML_TAG_REGEX.sub(" ", raw_html)
         body = html.unescape(stripped)
@@ -112,7 +115,13 @@ def _extract_body(msg: email.message.EmailMessage) -> str:
         body = ""
 
     # Truncate to 8000 characters
-    return body[:8000]
+    return body[:8000], raw_html
+
+
+def _extract_body(msg: email.message.EmailMessage) -> str:
+    """Extract plain text or stripped HTML from email parts."""
+    body, _ = _extract_body_and_html(msg)
+    return body
 
 
 def _extract_authentication(msg: email.message.EmailMessage) -> dict[str, str]:
@@ -155,7 +164,7 @@ def parse_email(raw_bytes: bytes) -> dict[str, Any]:
     date_val = str(msg.get("date", "") or "")
     message_id = str(msg.get("message-id", "") or "")
 
-    body_text = _extract_body(msg)
+    body_text, html_body = _extract_body_and_html(msg)
 
     # Extract and deduplicate URLs
     raw_urls = URL_REGEX.findall(body_text)
@@ -175,17 +184,32 @@ def parse_email(raw_bytes: bytes) -> dict[str, Any]:
                 seen_domains.add(netloc)
                 domains.append(netloc)
 
-    # Extract attachments
+    # Extract attachments and collect raw bytes for fingerprinting
     attachments: list[str] = []
     suspicious_attachments: list[str] = []
+    attachments_raw: list[bytes] = []
 
     for part in msg.walk():
         fn = part.get_filename()
+        is_attachment = part.get_content_disposition() == "attachment" or bool(fn)
+        if is_attachment:
+            payload = part.get_payload(decode=True)
+            if isinstance(payload, bytes) and payload:
+                attachments_raw.append(payload)
+
         if fn:
             fn_clean = str(fn).strip()
             attachments.append(fn_clean)
             if any(fn_clean.lower().endswith(ext) for ext in SUSPICIOUS_EXTENSIONS):
                 suspicious_attachments.append(fn_clean)
+
+    # Extract financial and technical fingerprints (Phase 9 - additive)
+    fingerprints = extract_fingerprints(
+        body_text=body_text,
+        urls=urls,
+        attachments_raw=attachments_raw,
+        html_body=html_body,
+    )
 
     # Authentication
     authentication = _extract_authentication(msg)
@@ -229,4 +253,10 @@ def parse_email(raw_bytes: bytes) -> dict[str, Any]:
             "return_path_mismatch": return_path_mismatch,
         },
         "raw_headers": raw_headers,
+        # Fingerprints (Phase 9 - additive)
+        "upi_ids": fingerprints["upi_ids"],
+        "wallet_addresses": fingerprints["wallet_addresses"],
+        "possible_bank_accounts": fingerprints["possible_bank_accounts"],
+        "attachment_hashes": fingerprints["attachment_hashes"],
+        "template_structure_hash": fingerprints["template_structure_hash"],
     }

@@ -1,4 +1,4 @@
-"""Database persistence package for TrashMail AI."""
+"""Database persistence package for TraceMail AI."""
 
 from __future__ import annotations
 

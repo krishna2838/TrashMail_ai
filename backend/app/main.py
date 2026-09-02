@@ -8,6 +8,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.routes_analyze import router as analyze_router
+from app.api.routes_batch import router as batch_router
 from app.api.routes_chat import router as chat_router
 from app.api.routes_graph import router as graph_router
 from app.api.routes_history import router as history_router
@@ -53,6 +54,7 @@ async def health_check() -> dict[str, str]:
 
 # Mount API routers
 app.include_router(analyze_router, prefix="/api")
+app.include_router(batch_router, prefix="/api")
 app.include_router(chat_router, prefix="/api")
 app.include_router(graph_router, prefix="/api")
 app.include_router(history_router, prefix="/api")

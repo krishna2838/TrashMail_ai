@@ -1,4 +1,4 @@
-"""Graph query API routes for TrashMail AI campaign visualization."""
+"""Graph query API routes for TraceMail AI campaign visualization."""
 
 from __future__ import annotations
 

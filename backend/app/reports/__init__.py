@@ -1,4 +1,4 @@
-"""Reports generation package for TrashMail AI."""
+"""Reports generation package for TraceMail AI."""
 
 from __future__ import annotations
 

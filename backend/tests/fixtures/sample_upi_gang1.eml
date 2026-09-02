@@ -1,0 +1,26 @@
+Received: from mail.billing-service-corp.com (mail.billing-service-corp.com [45.33.32.156])
+        by mx.targetmail.com with ESMTP id a1001;
+        Tue, 01 Sep 2026 10:00:00 +0000
+Authentication-Results: mx.targetmail.com;
+       spf=pass (targetmail.com: domain of support@billing-service-corp.com designates 45.33.32.156 as permitted sender);
+       dkim=none;
+       dmarc=none
+From: "Billing Department" <support@billing-service-corp.com>
+To: "Finance Victim" <finance@targetmail.com>
+Subject: Overdue Invoice #4401 - Immediate Action Required
+Date: Tue, 01 Sep 2026 10:00:00 +0000
+Message-ID: <gang1.1001.2026@billing-service-corp.com>
+MIME-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+
+Dear Customer,
+
+Your enterprise service invoice #4401 is pending payment.
+To prevent immediate suspension of services, please remit the outstanding balance of Rs 15,000.
+Remit via UPI payment to our clearing desk ID: gang.collector@okhdfcbank
+Alternatively transfer to Bank Account: 9876543210123
+
+For assistance visit: https://billing-service-corp.com/pay
+
+Regards,
+Accounts Team

@@ -5,7 +5,7 @@
       <div class="nav-container">
         <router-link to="/" class="nav-brand">
           <ShieldAlert :size="24" class="brand-shield" />
-          <span class="brand-title">TrashMail <span class="brand-ai">AI</span></span>
+          <span class="brand-title">TraceMail <span class="brand-ai">AI</span></span>
         </router-link>
 
         <nav class="nav-links">
@@ -22,6 +22,11 @@
             <BarChart2 :size="16" />
             <span>Results</span>
             <span v-if="store.hasAnalysis" :class="['dot-indicator', store.verdictClass]"></span>
+          </router-link>
+
+          <router-link to="/batch" class="nav-link" active-class="nav-link-active">
+            <Layers :size="16" />
+            <span>Batch Analyze</span>
           </router-link>
 
           <router-link to="/history" class="nav-link" active-class="nav-link-active">
@@ -43,7 +48,7 @@
 </template>
 
 <script setup>
-import { ShieldAlert, Search, BarChart2, History } from 'lucide-vue-next'
+import { ShieldAlert, Search, BarChart2, Layers, History } from 'lucide-vue-next'
 import { useAnalysisStore } from './stores/analysis'
 import ModelInfoFooter from './components/ModelInfoFooter.vue'
 

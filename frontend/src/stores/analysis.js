@@ -6,8 +6,8 @@ export const useAnalysisStore = defineStore('analysis', () => {
   const loading = ref(false)
   const error = ref(null)
 
-  // Local storage backed history for Phase 6
-  const savedHistory = localStorage.getItem('trashmail_history')
+  // Local storage backed history
+  const savedHistory = localStorage.getItem('tracemail_history') || localStorage.getItem('trashmail_history')
   const history = ref(savedHistory ? JSON.parse(savedHistory) : [])
 
   const hasAnalysis = computed(() => !!currentAnalysis.value)
@@ -56,7 +56,7 @@ export const useAnalysisStore = defineStore('analysis', () => {
       }
 
       try {
-        localStorage.setItem('trashmail_history', JSON.stringify(history.value))
+        localStorage.setItem('tracemail_history', JSON.stringify(history.value))
       } catch (e) {
         console.warn('Could not persist history to localStorage', e)
       }

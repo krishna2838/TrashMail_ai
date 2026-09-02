@@ -1,4 +1,4 @@
-"""Analysis and model metadata routes for TrashMail AI."""
+"""Analysis and model metadata routes for TraceMail AI."""
 
 from __future__ import annotations
 
@@ -71,12 +71,104 @@ async def get_model_info() -> dict[str, Any]:
         ) from exc
 
 
+def analyze_email_bytes(raw_bytes: bytes) -> dict[str, Any]:
+    """Execute the full email forensic analysis pipeline on raw email bytes.
+
+    Shared between single-email POST /api/analyze and batch POST /api/analyze/batch.
+    """
+    # 1. Parse standard headers, indicators, body, and authentication
+    email_data = parse_email(raw_bytes)
+
+    # 2. Extract received headers for hop analysis
+    raw_received = email_data.get("raw_headers", {}).get("received", [])
+    if isinstance(raw_received, str):
+        raw_received = [raw_received]
+    elif not isinstance(raw_received, list):
+        raw_received = []
+
+    hops = extract_hops(raw_received)
+    originating_ip = get_originating_ip(hops)
+
+    # 3. Sender Geolocation (MaxMind GeoIP2)
+    origin_geo = geolocate_ip(originating_ip) if originating_ip else None
+
+    # 4. Threat Intelligence (VirusTotal, top 5 domains + originating IP)
+    ip_reputation = check_ip(originating_ip) if originating_ip else {"available": False}
+    domain_reputations: dict[str, Any] = {}
+    for dom in email_data.get("domains", [])[:5]:
+        domain_reputations[dom] = check_domain(dom)
+
+    threat_intel = {
+        "originating_ip_reputation": ip_reputation,
+        "domain_reputations": domain_reputations,
+    }
+
+    # 5. ML text classification
+    ml_result = classify_text(
+        subject=email_data.get("subject", ""),
+        body=email_data.get("body_text", ""),
+    )
+
+    # 6. Composite risk scoring (incorporating threat intel)
+    risk_result = compute_risk(
+        parsed=email_data,
+        ml_result=ml_result,
+        threat_intel=threat_intel,
+    )
+
+    # 7. Build the response dict
+    response = {
+        **email_data,
+        "hops": hops,
+        "originating_ip": originating_ip,
+        "origin_geo": origin_geo,
+        "threat_intel": threat_intel,
+        "ml_phishing_probability": risk_result["ml_phishing_probability"],
+        "risk_score": risk_result["risk_score"],
+        "verdict": risk_result["verdict"],
+        "indicators": list(risk_result["indicators"]),
+    }
+
+    # 8. Persist to Neo4j graph (fire-and-forget, never fails the response)
+    save_analysis(response)
+
+    # 9. Campaign detection — find related emails via shared infrastructure
+    campaign = find_related_emails(response.get("email_hash", ""))
+    response["campaign"] = campaign
+
+    # 10. Boost risk score if part of a known campaign
+    if campaign["campaign_size"] > 0:
+        n = campaign["campaign_size"]
+        response["indicators"].append(
+            f"Sender infrastructure matches {n} other analyzed email(s) — part of a known campaign"
+        )
+        boosted_score = min(100, response["risk_score"] + 15)
+        response["risk_score"] = boosted_score
+        # Re-evaluate verdict after campaign boost
+        if boosted_score >= 70:
+            response["verdict"] = "Phishing/Scam"
+        elif boosted_score >= 35:
+            response["verdict"] = "Suspicious"
+
+    # 11. Persist to SQLite investigation history
+    save_investigation(response)
+
+    # 12. Cache for chat explain lookups
+    _cache_analysis(response)
+
+    return response
+
+
 @router.post(
     "/analyze",
-    summary="Analyze Raw Email",
-    description="Analyze a raw email provided via multipart .eml upload or JSON string.",
+    summary="Analyze an email for phishing and scam signals",
+    response_description="Detailed forensic analysis including headers, hops, ML score, geolocation, and threat intel.",
 )
 async def analyze_email(request: Request) -> dict[str, Any]:
+    """
+    Accept an email via multipart file upload (recommended) or raw email text in a JSON body.
+    Returns complete parsed headers, hop chain, threat intelligence, and risk assessment.
+    """
     content_type = request.headers.get("content-type", "").lower()
     raw_bytes: bytes = b""
 
@@ -139,90 +231,9 @@ async def analyze_email(request: Request) -> dict[str, Any]:
         )
 
     try:
-        # 1. Parse standard headers, indicators, body, and authentication
-        email_data = parse_email(raw_bytes)
-
-        # 2. Extract received headers for hop analysis
-        raw_received = email_data.get("raw_headers", {}).get("received", [])
-        if isinstance(raw_received, str):
-            raw_received = [raw_received]
-        elif not isinstance(raw_received, list):
-            raw_received = []
-
-        hops = extract_hops(raw_received)
-        originating_ip = get_originating_ip(hops)
-
-        # 3. Sender Geolocation (MaxMind GeoIP2)
-        origin_geo = geolocate_ip(originating_ip) if originating_ip else None
-
-        # 4. Threat Intelligence (VirusTotal, top 5 domains + originating IP)
-        ip_reputation = check_ip(originating_ip) if originating_ip else {"available": False}
-        domain_reputations: dict[str, Any] = {}
-        for dom in email_data.get("domains", [])[:5]:
-            domain_reputations[dom] = check_domain(dom)
-
-        threat_intel = {
-            "originating_ip_reputation": ip_reputation,
-            "domain_reputations": domain_reputations,
-        }
-
-        # 5. ML text classification
-        ml_result = classify_text(
-            subject=email_data.get("subject", ""),
-            body=email_data.get("body_text", ""),
-        )
-
-        # 6. Composite risk scoring (incorporating threat intel)
-        risk_result = compute_risk(
-            parsed=email_data,
-            ml_result=ml_result,
-            threat_intel=threat_intel,
-        )
-
-        # 7. Build the response dict
-        response = {
-            **email_data,
-            "hops": hops,
-            "originating_ip": originating_ip,
-            "origin_geo": origin_geo,
-            "threat_intel": threat_intel,
-            "ml_phishing_probability": risk_result["ml_phishing_probability"],
-            "risk_score": risk_result["risk_score"],
-            "verdict": risk_result["verdict"],
-            "indicators": list(risk_result["indicators"]),
-        }
-
-        # 8. Persist to Neo4j graph (fire-and-forget, never fails the response)
-        save_analysis(response)
-
-        # 9. Campaign detection — find related emails via shared infrastructure
-        campaign = find_related_emails(response.get("email_hash", ""))
-        response["campaign"] = campaign
-
-        # 10. Boost risk score if part of a known campaign
-        if campaign["campaign_size"] > 0:
-            n = campaign["campaign_size"]
-            response["indicators"].append(
-                f"Sender infrastructure matches {n} other analyzed email(s) — part of a known campaign"
-            )
-            boosted_score = min(100, response["risk_score"] + 15)
-            response["risk_score"] = boosted_score
-            # Re-evaluate verdict after campaign boost
-            if boosted_score >= 70:
-                response["verdict"] = "Phishing/Scam"
-            elif boosted_score >= 35:
-                response["verdict"] = "Suspicious"
-
-        # 11. Persist to SQLite investigation history
-        save_investigation(response)
-
-        # 12. Cache for chat explain lookups
-        _cache_analysis(response)
-
-        return response
+        return analyze_email_bytes(raw_bytes)
     except Exception as exc:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=f"Failed to parse email: {str(exc)}",
         ) from exc
-

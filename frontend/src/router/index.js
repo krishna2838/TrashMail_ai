@@ -15,6 +15,11 @@ const routes = [
     component: ResultsView,
   },
   {
+    path: '/batch',
+    name: 'batch',
+    component: () => import('../views/BatchAnalyzeView.vue'),
+  },
+  {
     path: '/history',
     name: 'history',
     component: HistoryView,

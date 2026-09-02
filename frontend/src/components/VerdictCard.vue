@@ -44,6 +44,62 @@
       </div>
     </div>
 
+    <!-- Extracted Case Fingerprints (Phase 9 - Additive) -->
+    <div v-if="hasFingerprints" class="fingerprints-section">
+      <h3 class="section-subtitle">Extracted Case Fingerprints</h3>
+      <div class="fingerprints-grid">
+        <!-- UPI IDs -->
+        <div v-if="analysis.upi_ids && analysis.upi_ids.length > 0" class="fp-group">
+          <span class="fp-label"><CreditCard :size="14" /> UPI Handles</span>
+          <div class="fp-tags">
+            <span v-for="(upi, idx) in analysis.upi_ids" :key="idx" class="fp-tag fp-upi">
+              {{ upi }}
+            </span>
+          </div>
+        </div>
+
+        <!-- Crypto Wallets -->
+        <div v-if="analysis.wallet_addresses && analysis.wallet_addresses.length > 0" class="fp-group">
+          <span class="fp-label"><Coins :size="14" /> Crypto Wallets</span>
+          <div class="fp-tags">
+            <span v-for="(wallet, idx) in analysis.wallet_addresses" :key="idx" class="fp-tag fp-wallet" :title="wallet">
+              {{ wallet }}
+            </span>
+          </div>
+        </div>
+
+        <!-- Bank Accounts -->
+        <div v-if="analysis.possible_bank_accounts && analysis.possible_bank_accounts.length > 0" class="fp-group">
+          <span class="fp-label"><Landmark :size="14" /> Possible Bank Accounts</span>
+          <div class="fp-tags">
+            <span v-for="(acc, idx) in analysis.possible_bank_accounts" :key="idx" class="fp-tag fp-bank">
+              {{ acc }}
+            </span>
+          </div>
+        </div>
+
+        <!-- Attachment Content Hashes -->
+        <div v-if="analysis.attachment_hashes && analysis.attachment_hashes.length > 0" class="fp-group">
+          <span class="fp-label"><FileCode :size="14" /> Attachment SHA-256</span>
+          <div class="fp-tags">
+            <span v-for="(ahash, idx) in analysis.attachment_hashes" :key="idx" class="fp-tag fp-hash" :title="ahash">
+              {{ ahash.slice(0, 16) }}...
+            </span>
+          </div>
+        </div>
+
+        <!-- HTML Template Skeleton Hash -->
+        <div v-if="analysis.template_structure_hash" class="fp-group">
+          <span class="fp-label"><LayoutTemplate :size="14" /> Template Skeleton Hash</span>
+          <div class="fp-tags">
+            <span class="fp-tag fp-template" :title="analysis.template_structure_hash">
+              {{ analysis.template_structure_hash.slice(0, 16) }}...
+            </span>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- Explain Findings Button & Inline Expandable Panel -->
     <div class="explain-section">
       <button 
@@ -77,7 +133,18 @@
 
 <script setup>
 import { ref, computed } from 'vue'
-import { AlertTriangle, CheckCircle, HelpCircle, ChevronDown, ChevronUp } from 'lucide-vue-next'
+import {
+  AlertTriangle,
+  CheckCircle,
+  HelpCircle,
+  ChevronDown,
+  ChevronUp,
+  CreditCard,
+  Coins,
+  Landmark,
+  FileCode,
+  LayoutTemplate,
+} from 'lucide-vue-next'
 import { chatExplain } from '../api/client'
 
 const props = defineProps({
@@ -108,6 +175,18 @@ const verdictBadgeClass = computed(() => {
 
 const verdictIcon = computed(() => {
   return props.analysis.verdict === 'Safe' ? CheckCircle : AlertTriangle
+})
+
+const hasFingerprints = computed(() => {
+  const a = props.analysis
+  if (!a) return false
+  return Boolean(
+    (a.upi_ids && a.upi_ids.length > 0) ||
+    (a.wallet_addresses && a.wallet_addresses.length > 0) ||
+    (a.possible_bank_accounts && a.possible_bank_accounts.length > 0) ||
+    (a.attachment_hashes && a.attachment_hashes.length > 0) ||
+    a.template_structure_hash
+  )
 })
 
 const formattedParagraphs = computed(() => {
@@ -282,6 +361,82 @@ async function toggleExplain() {
 .safe-icon {
   color: var(--verdict-safe);
   flex-shrink: 0;
+}
+
+/* Fingerprints Section (Phase 9) */
+.fingerprints-section {
+  border-top: 1px solid var(--border-light);
+  padding-top: 16px;
+}
+
+.fingerprints-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.fp-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.fp-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.fp-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.fp-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 0.82rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-weight: 500;
+}
+
+.fp-upi {
+  background-color: #F5F3FF;
+  color: #7C3AED;
+  border: 1px solid #DDD6FE;
+}
+
+.fp-wallet {
+  background-color: #FFFBEB;
+  color: #D97706;
+  border: 1px solid #FDE68A;
+}
+
+.fp-bank {
+  background-color: #F0FDF4;
+  color: #15803D;
+  border: 1px solid #BBF7D0;
+}
+
+.fp-hash {
+  background-color: #FFF1F2;
+  color: #E11D48;
+  border: 1px solid #FECDD3;
+}
+
+.fp-template {
+  background-color: #F0FDFA;
+  color: #0D9488;
+  border: 1px solid #99F6E4;
 }
 
 /* Explain Section */

@@ -9,7 +9,7 @@ from typing import Any
 # ── Mode 1: Explain findings ────────────────────────────────────────
 
 EXPLAIN_SYSTEM = (
-    "You are a cybersecurity assistant inside TrashMail AI, a phishing-detection tool. "
+    "You are a cybersecurity assistant inside TraceMail AI, a phishing-detection tool. "
     "You will be given a structured JSON analysis of one email that has ALREADY been scored "
     "by a trained classifier and rule-based checks. Your job is only to explain those findings "
     "in clear, plain language for someone who is not a security expert. Do not invent findings "
@@ -73,7 +73,7 @@ def build_explain_prompt(analysis: dict[str, Any]) -> tuple[str, str]:
 # ── Mode 2: Freeform "is this a scam?" ──────────────────────────────
 
 FREEFORM_SYSTEM = (
-    "You are a cybersecurity assistant inside TrashMail AI. Someone will paste a piece of text "
+    "You are a cybersecurity assistant inside TraceMail AI. Someone will paste a piece of text "
     "(a message, email snippet, or description of something they received) and ask whether it "
     "looks like a scam or phishing attempt. Analyze it for common red flags: urgency/pressure "
     "language, requests for money/credentials/OTPs, mismatched or suspicious links, impersonation "

@@ -20,7 +20,7 @@ from reportlab.platypus import (
     TableStyle,
 )
 
-# Design palette matching TrashMail AI
+# Design palette matching TraceMail AI
 COLOR_PRIMARY = colors.HexColor("#1D4ED8")      # Deep blue accent
 COLOR_TEXT_MAIN = colors.HexColor("#111827")    # Charcoal
 COLOR_TEXT_MUTED = colors.HexColor("#4B5563")   # Muted gray
@@ -147,7 +147,7 @@ def generate_report(analysis: dict[str, Any]) -> bytes:
 
     header_data = [
         [
-            Paragraph("<b>TRASHMAIL AI</b> — Forensic Incident Evidence Report", title_style),
+            Paragraph("<b>TRACEMAIL AI</b> — Forensic Incident Evidence Report", title_style),
             Paragraph(f"<b>Generated:</b> {now_str}<br/><b>Case ID:</b> {email_hash[:16]}...", subtitle_style),
         ]
     ]
@@ -404,7 +404,7 @@ def generate_report(analysis: dict[str, Any]) -> bytes:
     # ─────────────────────────────────────────────────────────────────
     story.append(HRFlowable(width="100%", thickness=0.5, color=COLOR_BORDER, spaceBefore=4, spaceAfter=6))
     disclaimer = (
-        "Generated automatically by TrashMail AI (SIH26106). This document constitutes forensic analysis "
+        "Generated automatically by TraceMail AI (SIH26106). This document constitutes forensic analysis "
         "evidence intended to support security operations and incident investigation. Findings should be "
         "independently verified prior to legal enforcement or administrative blocking actions."
     )

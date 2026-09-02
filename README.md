@@ -1,7 +1,7 @@
-# TrashMail AI — Phishing & Scam Intelligence Platform
-**Smart India Hackathon (SIH26106) Project**
+# TraceMail AI — Phishing & Scam Intelligence Platform
+**Smart India Hackathon (SIH26106) Project | Developed by Team Cyber Link**
 
-TrashMail AI is a forensic email analysis and sender-tracing platform built to counter sophisticated phishing, business email compromise (BEC), and infrastructure-reuse scam campaigns. Unlike conventional tools that rely solely on keyword matching or static blacklists, TrashMail AI parses complete RFC 822 MIME headers to trace true origin IPs across relay hops, scores content using a pre-trained ML classifier (98.9% accuracy on 84,665 real emails), geolocates senders with local MaxMind databases, cross-references threat intelligence via VirusTotal, clusters multi-email scam campaigns in a Neo4j graph, generates court-ready forensic PDF evidence, and provides plain-language AI explanations through local Ollama LLMs with zero cloud rate limits.
+TraceMail AI is a forensic email analysis and sender-tracing platform built to counter sophisticated phishing, business email compromise (BEC), and infrastructure-reuse scam campaigns. Unlike conventional tools that rely solely on keyword matching or static blacklists, TraceMail AI parses complete RFC 822 MIME headers to trace true origin IPs across relay hops, scores content using a pre-trained ML classifier (98.9% accuracy on 84,665 real emails), geolocates senders with local MaxMind databases, cross-references threat intelligence via VirusTotal, clusters multi-email scam campaigns in a Neo4j graph, generates court-ready forensic PDF evidence, and provides plain-language AI explanations through local Ollama LLMs with zero cloud rate limits.
 
 ---
 
@@ -130,9 +130,9 @@ The core classifier pipeline (`phishtrace_classifier.joblib`) was trained on **8
 1. **Language Scope**: The ML classifier is trained predominantly on English-language corpora. Non-English phishing text may yield lower ML confidence, though header and authentication signals remain language-independent.
 2. **VirusTotal Rate Limits**: Free-tier API keys are capped at 4 queries per minute. The system throttles gracefully, but analyzing emails with more than 4 distinct domains takes 60 seconds per batch.
 3. **Local LLM Performance**: Ollama inference speed depends on the host machine CPU/GPU. On machines with limited memory, the system automatically falls back from `qwen2.5:7b` to `qwen2.5:3b`.
-4. **Spoofed Received Headers**: While TrashMail AI orders hops chronologically and classifies private vs public IP boundaries, a recipient MTA under complete attacker control could inject forged intermediate hops. The system mitigates this by validating authentication-results from the boundary receiver.
+4. **Spoofed Received Headers**: While TraceMail AI orders hops chronologically and classifies private vs public IP boundaries, a recipient MTA under complete attacker control could inject forged intermediate hops. The system mitigates this by validating authentication-results from the boundary receiver.
 
 ---
 
 ## License & Credits
-Built for the **Smart India Hackathon (SIH26106)**. Includes GeoLite2 data created by MaxMind, available from [maxmind.com](https://www.maxmind.com).
+Built by **Team Cyber Link** for the **Smart India Hackathon (SIH26106)**. Includes GeoLite2 data created by MaxMind, available from [maxmind.com](https://www.maxmind.com).
