@@ -1,9 +1,9 @@
 <template>
-  <div class="card map-card">
+  <div :class="['card', 'map-card', { 'details-only-card': onlyDetails }]">
     <div class="card-header">
       <div class="title-with-icon">
         <MapPin :size="20" class="header-icon" />
-        <h2>Sender Geolocation & Infrastructure</h2>
+        <h2>{{ onlyDetails ? 'Sending Server Infrastructure Metadata' : 'Sender Infrastructure Geolocation' }}</h2>
       </div>
       <span v-if="originGeo && originGeo.country_code" class="country-badge">
         {{ originGeo.country_code }}
@@ -11,14 +11,15 @@
     </div>
 
     <!-- If Origin Geo exists and has coordinates -->
-    <div v-if="hasCoordinates" class="map-container-wrapper">
-      <div class="geo-meta-grid">
+    <div v-if="hasCoordinates || (onlyDetails && originGeo)" class="map-container-wrapper">
+      <!-- Detailed Metadata Grid (Technical: hidden when hideDetails is true) -->
+      <div v-if="!hideDetails" class="geo-meta-grid">
         <div class="meta-item">
-          <span class="meta-label">Origin IP</span>
+          <span class="meta-label">Origin Server IP</span>
           <span class="meta-val mono">{{ originGeo.ip }}</span>
         </div>
         <div class="meta-item">
-          <span class="meta-label">Location</span>
+          <span class="meta-label">Server Location</span>
           <span class="meta-val">{{ locationString }}</span>
         </div>
         <div class="meta-item">
@@ -33,15 +34,21 @@
         </div>
       </div>
 
-      <div ref="mapContainer" class="leaflet-map"></div>
+      <!-- Leaflet Map and Plain-Language Caption (Hidden in onlyDetails mode) -->
+      <template v-if="!onlyDetails">
+        <div ref="mapContainer" class="leaflet-map"></div>
+        <p class="map-caption">
+          Reflects the sending server's location — which may be a VPN, proxy, or compromised host, not necessarily the sender's physical location.
+        </p>
+      </template>
     </div>
 
     <!-- Empty State -->
     <div v-else class="empty-geo-state">
       <Globe :size="32" class="empty-icon" />
-      <p class="empty-title">No Public Originating IP Identified</p>
+      <p class="empty-title">{{ onlyDetails ? 'No Server IP Identified' : 'No Public Originating IP Identified' }}</p>
       <p class="empty-desc">
-        The email headers contain only internal or private network hops. Geolocation is unavailable.
+        {{ onlyDetails ? 'The email headers contain only private network relays.' : 'The email headers contain only internal or private network hops. Geolocation is unavailable.' }}
       </p>
     </div>
   </div>
@@ -60,6 +67,14 @@ const props = defineProps({
   threatIntel: {
     type: Object,
     default: null,
+  },
+  hideDetails: {
+    type: Boolean,
+    default: false,
+  },
+  onlyDetails: {
+    type: Boolean,
+    default: false,
   },
 })
 
@@ -92,7 +107,7 @@ const maliciousCount = computed(() => {
 })
 
 function initMap() {
-  if (!hasCoordinates.value || !mapContainer.value) return
+  if (props.onlyDetails || !hasCoordinates.value || !mapContainer.value) return
 
   // Destroy previous instance if re-rendering
   if (mapInstance) {
@@ -137,9 +152,9 @@ function initMap() {
 
   const popupContent = `
     <div style="font-family: sans-serif; font-size: 13px; line-height: 1.4;">
-      <strong>IP:</strong> ${props.originGeo.ip || 'N/A'}<br/>
-      <strong>Location:</strong> ${locationString.value}<br/>
-      <strong>ASN:</strong> ${props.originGeo.asn_org || 'N/A'}<br/>
+      <strong>Server IP:</strong> ${props.originGeo.ip || 'N/A'}<br/>
+      <strong>Server Location:</strong> ${locationString.value}<br/>
+      <strong>ASN / Org:</strong> ${props.originGeo.asn_org || 'N/A'}<br/>
       <strong>Status:</strong> <span style="color: ${isMalicious.value ? '#B91C1C' : '#15803D'}; font-weight: 600;">
         ${isMalicious.value ? 'Malicious' : 'Clean'}
       </span>
@@ -265,6 +280,13 @@ onBeforeUnmount(() => {
   border: 1px solid var(--border-light);
 }
 
+.map-caption {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  line-height: 1.4;
+  margin: -4px 0 0 0;
+}
+
 .empty-geo-state {
   display: flex;
   flex-direction: column;
@@ -292,5 +314,12 @@ onBeforeUnmount(() => {
   font-size: 0.88rem;
   color: var(--text-muted);
   max-width: 400px;
+}
+
+.details-only-card {
+  box-shadow: none;
+  background: transparent;
+  border: none;
+  padding: 0;
 }
 </style>

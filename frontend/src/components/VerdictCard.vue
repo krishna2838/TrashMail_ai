@@ -1,8 +1,9 @@
 <template>
-  <div class="card verdict-card">
-    <div class="verdict-header">
+  <div :class="['card', 'verdict-card', { 'technical-card': onlyTechnical }]">
+    <!-- Top Verdict Header (Hidden in onlyTechnical mode) -->
+    <div v-if="!onlyTechnical" class="verdict-header">
       <div class="verdict-summary">
-        <span class="label-heading">Email Forensic Verdict</span>
+        <span class="label-heading">Email Security Verdict</span>
         <div class="verdict-title-row">
           <h1 class="verdict-title">{{ analysis.verdict }}</h1>
           <span :class="['badge', verdictBadgeClass]">
@@ -19,7 +20,10 @@
           <span class="score-number" :style="{ color: verdictColor }">{{ analysis.risk_score }}</span>
           <span class="score-max">/ 100</span>
         </div>
-        <span class="score-label">Composite Threat Risk</span>
+        <span class="score-label">
+          Composite Threat Risk
+          <span class="abbr-help" title="A weighted risk score from 0 to 100 combining ML classification, authentication header anomalies, and threat intelligence.">(?)</span>
+        </span>
         <div class="meter-track">
           <div 
             class="meter-fill" 
@@ -29,8 +33,21 @@
       </div>
     </div>
 
-    <!-- Threat Indicators List -->
-    <div class="indicators-section">
+    <!-- Detection Ratio Badge (Part B — VirusTotal, Hidden in onlyTechnical mode) -->
+    <div v-if="!onlyTechnical && detectionRatio" class="detection-ratio-section">
+      <div :class="['detection-badge', detectionBadgeClass]">
+        <span class="detection-count">{{ detectionRatio.malicious }}</span>
+        <span class="detection-sep">/</span>
+        <span class="detection-total">{{ detectionRatio.total }}</span>
+      </div>
+      <span class="detection-label">
+        security vendors flagged this IP malicious
+        <span class="abbr-help" title="Based on VirusTotal threat intelligence scanning of the originating public mail server IP.">(?)</span>
+      </span>
+    </div>
+
+    <!-- Threat Indicators List (Technical: hidden when hideTechnical is true) -->
+    <div v-if="!hideTechnical" class="indicators-section">
       <h3 class="section-subtitle">Identified Indicators & Anomalies</h3>
       <div v-if="analysis.indicators && analysis.indicators.length > 0" class="indicators-list">
         <div v-for="(indicator, idx) in analysis.indicators" :key="idx" class="indicator-item">
@@ -44,8 +61,8 @@
       </div>
     </div>
 
-    <!-- Model Feature Attribution / Top Phrases (Phase 11 - Explainability) -->
-    <div v-if="hasTopPhrases" class="model-explain-section">
+    <!-- Model Feature Attribution / Top Phrases (Technical: hidden when hideTechnical is true) -->
+    <div v-if="!hideTechnical && hasTopPhrases" class="model-explain-section">
       <button 
         type="button" 
         class="explain-toggle-btn"
@@ -85,8 +102,8 @@
       </div>
     </div>
 
-    <!-- Extracted Case Fingerprints (Phase 9 - Additive) -->
-    <div v-if="hasFingerprints" class="fingerprints-section">
+    <!-- Extracted Case Fingerprints (Technical: hidden when hideTechnical is true) -->
+    <div v-if="!hideTechnical && hasFingerprints" class="fingerprints-section">
       <h3 class="section-subtitle">Extracted Case Fingerprints</h3>
       <div class="fingerprints-grid">
         <!-- UPI IDs -->
@@ -141,8 +158,8 @@
       </div>
     </div>
 
-    <!-- Explain Findings Button & Inline Expandable Panel -->
-    <div class="explain-section">
+    <!-- Explain Findings Button & Inline Expandable Panel (Simple: hidden in onlyTechnical mode) -->
+    <div v-if="!onlyTechnical" class="explain-section">
       <button 
         class="btn-secondary explain-btn"
         :disabled="isExplaining"
@@ -164,16 +181,14 @@
           <AlertTriangle :size="18" />
           <span>{{ explainError }}</span>
         </div>
-        <div v-else-if="explanationText" class="explanation-content">
-          <p v-for="(para, pIdx) in formattedParagraphs" :key="pIdx">{{ para }}</p>
-        </div>
+        <div v-else-if="explanationText" class="explanation-content" v-html="renderedExplanation"></div>
       </div>
     </div>
   </div>
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import {
   AlertTriangle,
   CheckCircle,
@@ -186,17 +201,33 @@ import {
   FileCode,
   LayoutTemplate,
   Brain,
+  Shield,
 } from 'lucide-vue-next'
+import { marked } from 'marked'
 import { chatExplain } from '../api/client'
+
+// Configure marked for safe defaults
+marked.setOptions({
+  breaks: true,
+  gfm: true,
+})
 
 const props = defineProps({
   analysis: {
     type: Object,
     required: true,
   },
+  hideTechnical: {
+    type: Boolean,
+    default: false,
+  },
+  onlyTechnical: {
+    type: Boolean,
+    default: false,
+  },
 })
 
-const isExpanded = ref(false)
+const isExpanded = ref(true)
 const isExplaining = ref(false)
 const explanationText = ref('')
 const explainError = ref(null)
@@ -249,9 +280,43 @@ const hasFingerprints = computed(() => {
   )
 })
 
-const formattedParagraphs = computed(() => {
-  if (!explanationText.value) return []
-  return explanationText.value.split('\n\n').filter(p => p.trim())
+const renderedExplanation = computed(() => {
+  if (!explanationText.value) return ''
+  let html = marked.parse(explanationText.value)
+  const glossary = [
+    { regex: /\bSPF\b/g, title: 'Sender Policy Framework: verifies the sender IP is authorized to send for this domain' },
+    { regex: /\bDKIM\b/g, title: 'DomainKeys Identified Mail: a cryptographic signature proving the email was not altered in transit' },
+    { regex: /\bDMARC\b/g, title: 'Domain-based Message Authentication: policy enforcing SPF and DKIM checks' },
+    { regex: /\bMTA\b/g, title: 'Mail Transfer Agent: an intermediate server routing email across the internet' },
+    { regex: /\bASN\b/g, title: 'Autonomous System Number: identifies the network operator hosting the server' },
+  ]
+  for (const item of glossary) {
+    html = html.replace(item.regex, `<abbr title="${item.title}">$&</abbr>`)
+  }
+  return html
+})
+
+// Part B — Detection ratio from threat_intel
+const detectionRatio = computed(() => {
+  const ti = props.analysis?.threat_intel
+  if (!ti || typeof ti !== 'object') return null
+  const ipRep = ti.originating_ip_reputation
+  if (!ipRep || !ipRep.available) return null
+  const malicious = ipRep.malicious ?? 0
+  const harmless = ipRep.harmless ?? 0
+  const suspicious = ipRep.suspicious ?? 0
+  const undetected = ipRep.undetected ?? 0
+  const total = malicious + harmless + suspicious + undetected
+  if (total === 0) return null
+  return { malicious, total }
+})
+
+const detectionBadgeClass = computed(() => {
+  if (!detectionRatio.value) return ''
+  const ratio = detectionRatio.value.malicious / detectionRatio.value.total
+  if (ratio >= 0.1) return 'detection-danger'
+  if (ratio > 0) return 'detection-warn'
+  return 'detection-clean'
 })
 
 async function toggleExplain() {
@@ -278,6 +343,12 @@ async function toggleExplain() {
     isExplaining.value = false
   }
 }
+
+onMounted(() => {
+  if (!props.onlyTechnical && !explanationText.value && !isExplaining.value) {
+    toggleExplain()
+  }
+})
 </script>
 
 <style scoped>
@@ -639,12 +710,135 @@ async function toggleExplain() {
   color: var(--verdict-phish);
 }
 
-.explanation-content p {
-  margin-bottom: 10px;
+/* Rendered markdown in explanation */
+.explanation-content :deep(p) {
+  margin: 0 0 10px 0;
 }
 
-.explanation-content p:last-child {
+.explanation-content :deep(p:last-child) {
   margin-bottom: 0;
+}
+
+.explanation-content :deep(h1),
+.explanation-content :deep(h2),
+.explanation-content :deep(h3),
+.explanation-content :deep(h4) {
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: var(--text-main);
+  margin: 14px 0 6px 0;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--border-light);
+}
+
+.explanation-content :deep(h1:first-child),
+.explanation-content :deep(h2:first-child),
+.explanation-content :deep(h3:first-child),
+.explanation-content :deep(h4:first-child) {
+  margin-top: 0;
+}
+
+.explanation-content :deep(ul),
+.explanation-content :deep(ol) {
+  margin: 4px 0 10px 0;
+  padding-left: 20px;
+}
+
+.explanation-content :deep(li) {
+  margin-bottom: 4px;
+}
+
+.explanation-content :deep(strong) {
+  font-weight: 600;
+}
+
+.explanation-content :deep(code) {
+  background-color: rgba(0, 0, 0, 0.06);
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-size: 0.88em;
+}
+
+/* Detection Ratio Badge (Part B) */
+.detection-ratio-section {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  background-color: var(--bg-page);
+  border-radius: 8px;
+  border: 1px solid var(--border-light);
+}
+
+.detection-badge {
+  display: flex;
+  align-items: baseline;
+  gap: 2px;
+  padding: 6px 14px;
+  border-radius: 8px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+.detection-count {
+  font-size: 1.5rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.detection-sep {
+  font-size: 1.1rem;
+  font-weight: 500;
+  opacity: 0.6;
+}
+
+.detection-total {
+  font-size: 1.1rem;
+  font-weight: 500;
+  opacity: 0.7;
+}
+
+.detection-label {
+  font-size: 0.92rem;
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.detection-danger {
+  background-color: var(--verdict-phish-bg);
+  color: var(--verdict-phish);
+  border: 1px solid var(--verdict-phish);
+}
+
+.detection-warn {
+  background-color: #FFFBEB;
+  color: var(--verdict-suspicious);
+  border: 1px solid var(--verdict-suspicious);
+}
+
+.detection-clean {
+  background-color: var(--verdict-safe-bg);
+  color: var(--verdict-safe);
+  border: 1px solid var(--verdict-safe);
+}
+
+.abbr-help {
+  font-size: 0.8rem;
+  color: var(--accent);
+  cursor: help;
+  margin-left: 4px;
+}
+
+:deep(abbr) {
+  text-decoration: underline dotted;
+  cursor: help;
+}
+
+.technical-card {
+  box-shadow: none;
+  background: transparent;
+  border: none;
+  padding: 0;
+  gap: 16px;
 }
 
 @media (max-width: 640px) {

@@ -68,8 +68,20 @@ export const useAnalysisStore = defineStore('analysis', () => {
     error.value = null
   }
 
+  // Persistent batch triage state
+  const currentBatchResult = ref(null)
+
+  function setBatchResult(data) {
+    currentBatchResult.value = data
+  }
+
+  function clearBatchResult() {
+    currentBatchResult.value = null
+  }
+
   return {
     currentAnalysis,
+    currentBatchResult,
     loading,
     error,
     history,
@@ -78,5 +90,7 @@ export const useAnalysisStore = defineStore('analysis', () => {
     verdictColor,
     setAnalysis,
     clearAnalysis,
+    setBatchResult,
+    clearBatchResult,
   }
 })

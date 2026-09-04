@@ -52,8 +52,10 @@ export async function chatExplain(emailHash, analysis = null) {
   return response.data
 }
 
-export async function chatAsk(message) {
-  const response = await api.post('/api/chat/ask', { message })
+export async function chatAsk(message, context = null) {
+  const payload = { message }
+  if (context) payload.context = context
+  const response = await api.post('/api/chat/ask', payload)
   return response.data
 }
 

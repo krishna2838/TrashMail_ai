@@ -193,12 +193,17 @@
           :hide-notice="true"
         />
       </div>
+
+      <!-- Batch Chat Assistant (Part C) -->
+      <div class="batch-chat-section">
+        <ChatPanel :context="batchChatContext" />
+      </div>
     </div>
   </div>
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { 
   Layers, 
@@ -215,6 +220,7 @@ import {
 import { analyzeBatch } from '../api/client'
 import { useAnalysisStore } from '../stores/analysis'
 import NetworkGraphPanel from '../components/NetworkGraphPanel.vue'
+import ChatPanel from '../components/ChatPanel.vue'
 
 const router = useRouter()
 const store = useAnalysisStore()
@@ -224,7 +230,11 @@ const selectedFiles = ref([])
 const isDragging = ref(false)
 const analyzing = ref(false)
 const errorMessage = ref(null)
-const batchResult = ref(null)
+
+const batchResult = computed({
+  get: () => store.currentBatchResult,
+  set: (val) => store.setBatchResult(val),
+})
 
 function triggerFileInput() {
   if (fileInput.value) {
@@ -392,8 +402,22 @@ async function runBatchAnalysis() {
 
 function viewSingleResult(result) {
   store.setAnalysis(result)
-  router.push('/results')
+  router.push({ path: '/results', query: { fromBatch: 'true' } })
 }
+
+const batchChatContext = computed(() => {
+  const b = batchResult.value
+  if (!b) return null
+  const verdicts = {}
+  for (const r of (b.results || [])) {
+    verdicts[r.verdict] = (verdicts[r.verdict] || 0) + 1
+  }
+  return {
+    batch_size: b.results?.length || 0,
+    cluster_count: b.cluster_count || 0,
+    verdicts: verdicts,
+  }
+})
 
 function hasAnyFingerprints(res) {
   return Boolean(

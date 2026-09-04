@@ -310,7 +310,7 @@ def generate_report(analysis: dict[str, Any]) -> bytes:
         f"<b>City:</b> {geo.get('city', 'Unknown')}<br/>"
         f"<b>ASN Org:</b> {geo.get('asn_org', 'Unknown')}<br/>"
         f"<b>Coordinates:</b> {geo.get('latitude', 'N/A')}, {geo.get('longitude', 'N/A')}"
-    ) if geo.get("ip") else "No public originating IP geolocated."
+    ) if geo.get("ip") else "No public originating server IP geolocated."
 
     ip_status = ip_rep.get("reputation", "unavailable").upper()
     ip_mal = ip_rep.get("malicious", 0)
@@ -328,7 +328,7 @@ def generate_report(analysis: dict[str, Any]) -> bytes:
         intel_text += "<b>Domain Scans:</b> None extracted."
 
     geo_intel_data = [
-        [Paragraph("<b>Sender Geolocation</b>", meta_label_style), Paragraph("<b>VirusTotal Threat Intelligence</b>", meta_label_style)],
+        [Paragraph("<b>Sending Server Geolocation</b>", meta_label_style), Paragraph("<b>VirusTotal Threat Intelligence</b>", meta_label_style)],
         [Paragraph(geo_text, body_style), Paragraph(intel_text, body_style)],
     ]
     geo_intel_table = Table(geo_intel_data, colWidths=[270, 270])
@@ -341,8 +341,14 @@ def generate_report(analysis: dict[str, Any]) -> bytes:
         ("RIGHTPADDING", (0, 0), (-1, -1), 6),
         ("VALIGN", (0, 0), (-1, -1), "TOP"),
     ]))
-    story.append(Paragraph("4. Origin Geolocation & Threat Intelligence", section_heading))
+    story.append(Paragraph("4. Sender Infrastructure Geolocation & Threat Intelligence", section_heading))
     story.append(geo_intel_table)
+    story.append(Spacer(1, 3))
+    story.append(Paragraph(
+        "<i>Note: Geolocation identifies the sending server's infrastructure footprint (which may be a VPN, "
+        "proxy, or compromised relay), not necessarily the sender's physical location.</i>",
+        footer_style,
+    ))
     story.append(Spacer(1, 8))
 
     # ─────────────────────────────────────────────────────────────────

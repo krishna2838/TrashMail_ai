@@ -30,6 +30,9 @@ class FreeformRequest(BaseModel):
     """Request body for the freeform scam check endpoint."""
 
     message: str = Field(..., description="Text to analyze for scam/phishing indicators.")
+    context: Optional[Dict[str, Any]] = Field(
+        None, description="Optional current email or batch analysis context to guide the assistant."
+    )
 
 
 @router.post(
@@ -89,7 +92,7 @@ async def chat_ask(body: FreeformRequest) -> dict[str, str]:
             detail="Message cannot be empty.",
         )
 
-    system, prompt = build_freeform_prompt(body.message)
+    system, prompt = build_freeform_prompt(body.message, context=body.context)
 
     try:
         response_text = await ask_ollama(prompt, system)

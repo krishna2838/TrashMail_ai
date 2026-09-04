@@ -56,6 +56,48 @@ def test_build_freeform_prompt():
     assert "cybersecurity assistant" in system
 
 
+def test_build_freeform_prompt_with_single_email_context():
+    """Freeform prompt incorporates single email forensic context."""
+    context = {
+        "verdict": "Phishing/Scam",
+        "risk_score": 88,
+        "subject": "Urgent wire transfer",
+        "sender": "finance@evil-corp.com",
+        "ml_phishing_probability": 0.92,
+        "indicators": [{"name": "SPF fail", "category": "auth"}],
+        "campaign_size": 3,
+        "origin_geo": {"city": "Frankfurt", "country": "Germany"},
+    }
+    system, prompt = build_freeform_prompt("What is this email?", context=context)
+    assert "CURRENT EMAIL FORENSIC CONTEXT:" in system
+    assert "Urgent wire transfer" in system
+    assert "finance@evil-corp.com" in system
+    assert "Phishing/Scam" in system
+    assert "88/100" in system
+    assert "92.0%" in system
+    assert "SPF fail" in system
+    assert "Frankfurt, Germany" in system
+    assert "User query / text to analyze:" in prompt
+    assert "What is this email?" in prompt
+
+
+def test_build_freeform_prompt_with_batch_context():
+    """Freeform prompt incorporates batch triage context."""
+    context = {
+        "batch_size": 5,
+        "cluster_count": 2,
+        "verdicts": {"Phishing/Scam": 3, "Safe": 2},
+    }
+    system, prompt = build_freeform_prompt("How many campaigns were found?", context=context)
+    assert "CURRENT BATCH TRIAGE CONTEXT:" in system
+    assert "Total Email Complaints in Batch: 5" in system
+    assert "Coordinated Threat Campaigns/Clusters Detected: 2" in system
+    assert "Phishing/Scam: 3" in system
+    assert "User query / text to analyze:" in prompt
+    assert "How many campaigns were found?" in prompt
+
+
+
 # ── Chat API route tests ─────────────────────────────────────────────
 
 
@@ -67,6 +109,31 @@ def test_chat_ask_returns_response(mock_ollama):
     data = response.json()
     assert "response" in data
     assert "Likely Scam" in data["response"]
+
+
+@patch("app.api.routes_chat.ask_ollama", new_callable=AsyncMock)
+def test_chat_ask_with_context(mock_ollama):
+    mock_ollama.return_value = "This email was flagged Phishing/Scam due to failed SPF and wire transfer urgency."
+    response = client.post(
+        "/api/chat/ask",
+        json={
+            "message": "Why was this email flagged?",
+            "context": {
+                "verdict": "Phishing/Scam",
+                "risk_score": 85,
+                "subject": "Wire Transfer Request",
+            },
+        },
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert "response" in data
+    # Verify that ask_ollama received prompt and system prompt containing the context
+    mock_ollama.assert_called_once()
+    called_prompt, called_system = mock_ollama.call_args[0]
+    assert "Wire Transfer Request" in called_system
+    assert "Why was this email flagged?" in called_prompt
+
 
 
 @patch("app.api.routes_chat.ask_ollama", new_callable=AsyncMock)

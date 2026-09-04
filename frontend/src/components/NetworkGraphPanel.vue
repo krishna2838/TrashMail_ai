@@ -7,7 +7,7 @@
       </div>
       <div class="header-actions">
         <button 
-          v-if="!loading && !error && hasNodes" 
+          v-if="showGraph && !loading && !error && hasNodes" 
           class="fit-btn" 
           title="Fit graph to view"
           @click="fitGraph"
@@ -29,67 +29,110 @@
       </span>
     </div>
 
-    <!-- Graph Container Wrapper -->
-    <div class="graph-wrapper">
-      <!-- Loading Overlay -->
-      <div v-if="loading" class="graph-overlay">
-        <div class="spinner spinner-dark"></div>
-        <span>Constructing graph visualization from Neo4j...</span>
+    <!-- Part D — Summary card (default for single-email view) -->
+    <div v-if="!isBatchMode" v-show="!showGraph" class="campaign-summary-view">
+      <!-- Related emails list -->
+      <div v-if="relatedEmails.length > 0" class="related-list">
+        <div class="related-intro">
+          <span>
+            Linked to <strong>{{ relatedEmails.length }}</strong> other analyzed {{ relatedEmails.length === 1 ? 'report' : 'reports' }}
+            <template v-if="primaryLink"> via a shared {{ primaryLink.type }}
+              (<code class="shared-val">{{ primaryLink.value }}</code>)
+            </template>
+          </span>
+        </div>
+        <div v-for="(rel, idx) in relatedEmails" :key="idx" class="related-email-row">
+          <span :class="['badge', getRelBadgeClass(rel.verdict)]">{{ rel.verdict }}</span>
+          <span class="related-subject" :title="rel.subject">{{ rel.subject || '(No subject)' }}</span>
+          <span class="related-link-type">via {{ rel.shared_via }}</span>
+        </div>
       </div>
 
-      <!-- Error Overlay -->
-      <div v-else-if="error" class="graph-overlay">
-        <p>{{ error }}</p>
-      </div>
-
-      <!-- Empty Nodes Overlay -->
-      <div v-else-if="!hasNodes" class="graph-overlay">
-        <p>No graph nodes found for this analysis.</p>
-      </div>
-
-      <!-- vis-network canvas container: ALWAYS mounted with concrete pixel dimensions -->
-      <div ref="networkContainer" class="vis-network-container"></div>
-
-      <!-- Empty state banner when only current email exists -->
-      <div v-if="!loading && !error && campaignSize === 0 && !hideNotice && !graphData" class="single-email-notice">
+      <!-- Empty state (no campaign matches) -->
+      <div v-else-if="!loading && !error" class="summary-empty">
         <Info :size="16" />
         <span>No connections to other analyzed emails yet — this is the first sighting of this infrastructure.</span>
       </div>
+
+      <!-- Toggle to advanced view -->
+      <button 
+        v-if="!loading && hasNodes"
+        class="toggle-graph-btn btn-secondary" 
+        @click="toggleGraphView(true)"
+      >
+        <Network :size="15" />
+        <span>Show Infrastructure Graph</span>
+      </button>
     </div>
 
-    <!-- Graph Legend -->
-    <div class="graph-legend">
-      <div class="legend-item">
-        <span class="legend-dot dot-phish"></span>
-        <span class="legend-text">Phishing Email</span>
+    <!-- Advanced graph view (always shown for batch mode, toggleable for single) -->
+    <div :class="['graph-section', { 'graph-hidden': !isBatchMode && !showGraph }]">
+      <!-- Toggle back to summary (single-email only) -->
+      <button 
+        v-if="!isBatchMode"
+        class="toggle-graph-btn btn-secondary toggle-back"
+        @click="toggleGraphView(false)"
+      >
+        <List :size="15" />
+        <span>Show Summary View</span>
+      </button>
+
+      <!-- Graph Container Wrapper -->
+      <div class="graph-wrapper">
+        <!-- Loading Overlay -->
+        <div v-if="loading" class="graph-overlay">
+          <div class="spinner spinner-dark"></div>
+          <span>Constructing graph visualization from Neo4j...</span>
+        </div>
+
+        <!-- Error Overlay -->
+        <div v-else-if="error" class="graph-overlay">
+          <p>{{ error }}</p>
+        </div>
+
+        <!-- Empty Nodes Overlay -->
+        <div v-else-if="!hasNodes" class="graph-overlay">
+          <p>No graph nodes found for this analysis.</p>
+        </div>
+
+        <!-- vis-network canvas container: ALWAYS mounted with concrete pixel dimensions -->
+        <div ref="networkContainer" class="vis-network-container"></div>
       </div>
-      <div class="legend-item">
-        <span class="legend-dot dot-safe"></span>
-        <span class="legend-text">Safe Email</span>
-      </div>
-      <div class="legend-item">
-        <span class="legend-dot dot-domain"></span>
-        <span class="legend-text">Domain</span>
-      </div>
-      <div class="legend-item">
-        <span class="legend-dot dot-ip"></span>
-        <span class="legend-text">IP Node</span>
-      </div>
-      <div class="legend-item">
-        <span class="legend-dot dot-upi"></span>
-        <span class="legend-text">UPI ID</span>
-      </div>
-      <div class="legend-item">
-        <span class="legend-dot dot-wallet"></span>
-        <span class="legend-text">Crypto Wallet</span>
-      </div>
-      <div class="legend-item">
-        <span class="legend-dot dot-hash"></span>
-        <span class="legend-text">Attachment Hash</span>
-      </div>
-      <div class="legend-item">
-        <span class="legend-dot dot-template"></span>
-        <span class="legend-text">Template Hash</span>
+
+      <!-- Graph Legend -->
+      <div class="graph-legend">
+        <div class="legend-item">
+          <span class="legend-dot dot-phish"></span>
+          <span class="legend-text">Phishing Email</span>
+        </div>
+        <div class="legend-item">
+          <span class="legend-dot dot-safe"></span>
+          <span class="legend-text">Safe Email</span>
+        </div>
+        <div class="legend-item">
+          <span class="legend-dot dot-domain"></span>
+          <span class="legend-text">Domain</span>
+        </div>
+        <div class="legend-item">
+          <span class="legend-dot dot-ip"></span>
+          <span class="legend-text">IP Node</span>
+        </div>
+        <div class="legend-item">
+          <span class="legend-dot dot-upi"></span>
+          <span class="legend-text">UPI ID</span>
+        </div>
+        <div class="legend-item">
+          <span class="legend-dot dot-wallet"></span>
+          <span class="legend-text">Crypto Wallet</span>
+        </div>
+        <div class="legend-item">
+          <span class="legend-dot dot-hash"></span>
+          <span class="legend-text">Attachment Hash</span>
+        </div>
+        <div class="legend-item">
+          <span class="legend-dot dot-template"></span>
+          <span class="legend-text">Template Hash</span>
+        </div>
       </div>
     </div>
   </div>
@@ -97,7 +140,7 @@
 
 <script setup>
 import { ref, computed, onMounted, watch, onBeforeUnmount, nextTick } from 'vue'
-import { Network, Share2, Info, Maximize2 } from 'lucide-vue-next'
+import { Network, Share2, Info, Maximize2, List } from 'lucide-vue-next'
 import { Network as VisNetwork, DataSet } from 'vis-network/standalone'
 import { getGraph } from '../api/client'
 
@@ -128,12 +171,68 @@ const networkContainer = ref(null)
 const loading = ref(true)
 const error = ref(null)
 const hasNodes = ref(true)
+const showGraph = ref(false)
 let networkInstance = null
 let resizeObserver = null
+
+// Part D — computed helpers for summary vs graph view
+const isBatchMode = computed(() => {
+  return Boolean(props.graphData)
+})
 
 const campaignSize = computed(() => {
   return props.campaign?.campaign_size || 0
 })
+
+const relatedEmails = computed(() => {
+  return props.campaign?.related_emails || []
+})
+
+const primaryLink = computed(() => {
+  const emails = relatedEmails.value
+  if (!emails || emails.length === 0) return null
+  const first = emails[0]
+  if (!first.shared_via || !first.shared_value) return null
+  const typeLabels = {
+    ip: 'IP address',
+    domain: 'domain',
+    upi: 'UPI ID',
+    wallet: 'crypto wallet',
+    attachment_hash: 'attachment hash',
+    template_hash: 'template hash',
+  }
+  return {
+    type: typeLabels[first.shared_via] || first.shared_via,
+    value: first.shared_value,
+  }
+})
+
+function getRelBadgeClass(verdict) {
+  if (verdict === 'Safe') return 'badge-safe'
+  if (verdict === 'Suspicious') return 'badge-suspicious'
+  return 'badge-phish'
+}
+
+async function toggleGraphView(visible) {
+  showGraph.value = visible
+  if (visible) {
+    await nextTick()
+    setTimeout(() => {
+      if (networkInstance) {
+        networkInstance.setSize('100%', '380px')
+        networkInstance.redraw()
+        networkInstance.fit({
+          animation: {
+            duration: 350,
+            easingFunction: 'easeInOutQuad',
+          },
+        })
+      } else {
+        loadAndRenderGraph()
+      }
+    }, 60)
+  }
+}
 
 function fitGraph() {
   if (networkInstance) {
@@ -330,11 +429,11 @@ async function loadAndRenderGraph() {
           springLength: 130,
           springConstant: 0.04,
           damping: 0.09,
-          avoidOverlap: 0.6,
+          avoidOverlap: 0.5,
         },
         stabilization: {
           enabled: true,
-          iterations: 150,
+          iterations: 200,
           updateInterval: 25,
           fit: true,
         },
@@ -355,15 +454,22 @@ async function loadAndRenderGraph() {
 
     networkInstance = new VisNetwork(networkContainer.value, networkData, options)
 
-    // Ensure proper sizing and fit once stabilization completes
+    // Ensure proper sizing, fit, and freeze physics once stabilization completes
     networkInstance.once('stabilizationIterationsDone', () => {
       if (networkInstance) {
+        networkInstance.setOptions({ physics: false })
         networkInstance.fit({
           animation: {
             duration: 350,
             easingFunction: 'easeInOutQuad',
           },
         })
+      }
+    })
+
+    networkInstance.once('stabilized', () => {
+      if (networkInstance) {
+        networkInstance.setOptions({ physics: false })
       }
     })
 
@@ -383,9 +489,15 @@ async function loadAndRenderGraph() {
 
     // Set up ResizeObserver to handle container size shifts
     if (!resizeObserver && window.ResizeObserver && networkContainer.value) {
-      resizeObserver = new ResizeObserver(() => {
-        if (networkInstance) {
-          networkInstance.redraw()
+      resizeObserver = new ResizeObserver((entries) => {
+        for (const entry of entries) {
+          if (entry.contentRect.width > 20 && entry.contentRect.height > 20) {
+            if (networkInstance) {
+              networkInstance.setSize('100%', '380px')
+              networkInstance.redraw()
+              networkInstance.fit()
+            }
+          }
         }
       })
       resizeObserver.observe(networkContainer.value)
@@ -609,5 +721,96 @@ onBeforeUnmount(() => {
 .dot-template {
   background-color: #F0FDFA;
   border: 2px solid #0D9488;
+}
+
+/* Part D — Summary view & toggle */
+.campaign-summary-view {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.related-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.related-intro {
+  font-size: 0.92rem;
+  color: var(--text-main);
+  line-height: 1.5;
+  padding: 10px 14px;
+  background-color: var(--bg-page);
+  border-left: 3px solid var(--accent);
+  border-radius: 6px;
+}
+
+.shared-val {
+  background-color: rgba(0, 0, 0, 0.06);
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-size: 0.88em;
+  word-break: break-all;
+}
+
+.related-email-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  background-color: #FFFFFF;
+  border: 1px solid var(--border-light);
+  border-radius: 6px;
+  font-size: 0.9rem;
+}
+
+.related-subject {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-main);
+  font-weight: 500;
+}
+
+.related-link-type {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.summary-empty {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 16px;
+  background-color: var(--bg-page);
+  border-radius: 8px;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
+.toggle-graph-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  align-self: flex-start;
+  font-size: 0.85rem;
+  padding: 6px 14px;
+}
+
+.toggle-back {
+  margin-bottom: 4px;
+}
+
+.graph-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.graph-hidden {
+  display: none !important;
 }
 </style>

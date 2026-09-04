@@ -1,7 +1,7 @@
 # TraceMail AI — Phishing & Scam Intelligence Platform
 **Smart India Hackathon (SIH26106) Project | Developed by Team Cyber Link**
 
-TraceMail AI is a forensic email analysis and sender-tracing platform built to counter sophisticated phishing, business email compromise (BEC), and infrastructure-reuse scam campaigns. Unlike conventional tools that rely solely on keyword matching or static blacklists, TraceMail AI parses complete RFC 822 MIME headers to trace true origin IPs across relay hops, scores content using a pre-trained ML classifier (98.9% accuracy on 84,665 real emails), geolocates senders with local MaxMind databases, cross-references threat intelligence via VirusTotal, clusters multi-email scam campaigns in a Neo4j graph, generates court-ready forensic PDF evidence, and provides plain-language AI explanations through local Ollama LLMs with zero cloud rate limits.
+TraceMail AI is a forensic email analysis and sender-tracing platform built to counter sophisticated phishing, business email compromise (BEC), and infrastructure-reuse scam campaigns. Unlike conventional tools that rely solely on keyword matching or static blacklists, TraceMail AI parses complete RFC 822 MIME headers to trace true origin IPs across relay hops, scores content using a pre-trained ML classifier (98.9% accuracy on 84,665 real emails), geolocates sending server infrastructure with local MaxMind databases, cross-references threat intelligence via VirusTotal, clusters multi-email scam campaigns in a Neo4j graph, generates court-ready forensic PDF evidence, and provides plain-language AI explanations through local Ollama LLMs with zero cloud rate limits.
 
 ---
 
@@ -96,9 +96,9 @@ docker compose up --build -d
 |---|---|---|
 | **Forensic Parser** | `POST /api/analyze` | Walks MIME trees, extracts routing hops, checks domain alignment (Reply-To / Return-Path mismatches), flags executable/script attachments (`.scr`, `.exe`, `.js`), and parses SPF/DKIM/DMARC. |
 | **ML Threat Scoring** | `GET /api/model-info` | Scikit-learn Pipeline executing TF-IDF vectorization + Logistic Regression with 0–100 composite weighting. |
-| **Origin Geolocation** | `GeoMapPanel.vue` | Offline MaxMind lookup pinpointing the true originating public server location on Leaflet OpenStreetMap tiles. |
+| **Origin Geolocation** | `GeoMapPanel.vue` | Offline MaxMind lookup mapping the originating public mail server's infrastructure footprint on Leaflet OpenStreetMap tiles. |
 | **Threat Intelligence** | VirusTotal API v3 | In-memory cached IOC reputation engine with 4 req/min rate limiting and graceful offline degradation. |
-| **Campaign Graph** | `GET /api/graph/{hash}` | Neo4j 2-hop cluster matching (`(e1)-[]-(shared)-[]-(e2)`) detecting when an attacker reuses domains or IPs across targets. |
+| **Campaign Graph** | `GET /api/graph/{hash}` | Neo4j 2-hop cluster matching (`(e1)-[]-(shared)-[]-(e2)`) detecting when threat actors reuse domains, IPs, or payment handles across targets. |
 | **Local AI Briefing** | `POST /api/chat/explain` | Grounded explanation from `qwen2.5:7b` (with auto 3B fallback) translating raw header flags into plain English without prompt injection risk. |
 | **Scam Chat Assistant** | `POST /api/chat/ask` | Freeform analysis assistant evaluating pasted message text, SMS scams, or suspicious prompts. |
 | **Evidence PDF Export** | `GET /api/reports/{hash}.pdf` | Court-ready forensic evidence report generated using ReportLab Platypus flowables. |
@@ -131,6 +131,7 @@ The core classifier pipeline (`phishtrace_classifier.joblib`) was trained on **8
 2. **VirusTotal Rate Limits**: Free-tier API keys are capped at 4 queries per minute. The system throttles gracefully, but analyzing emails with more than 4 distinct domains takes 60 seconds per batch.
 3. **Local LLM Performance**: Ollama inference speed depends on the host machine CPU/GPU. On machines with limited memory, the system automatically falls back from `qwen2.5:7b` to `qwen2.5:3b`.
 4. **Spoofed Received Headers**: While TraceMail AI orders hops chronologically and classifies private vs public IP boundaries, a recipient MTA under complete attacker control could inject forged intermediate hops. The system mitigates this by validating authentication-results from the boundary receiver.
+5. **Server Geolocation vs. Physical Sender Location**: Geolocation identifies the geographic location of the originating public mail server (MTA) recorded in the hop chain. This accurately reflects the sender's infrastructure footprint (which may include commercial hosting providers, VPNs, proxies, or compromised relays), not necessarily the perpetrator's physical location.
 
 ---
 

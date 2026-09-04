@@ -5,10 +5,10 @@
         <MessageCircle :size="20" class="header-icon" />
         <h2>Scam Query Assistant</h2>
       </div>
-      <span class="chat-mode-label">Freeform Mode</span>
+      <span class="chat-mode-label">{{ modeLabel }}</span>
     </div>
     <p class="section-desc">
-      Paste any suspicious message snippet, SMS, or link to ask the local AI assistant if it looks like a scam.
+      {{ modeDescription }}
     </p>
 
     <!-- Message History -->
@@ -46,7 +46,7 @@
       <input 
         v-model="inputQuery"
         type="text"
-        placeholder="e.g. 'Is this message asking for wire transfer legitimate?'"
+        :placeholder="inputPlaceholder"
         :disabled="isLoading"
         class="chat-input"
       />
@@ -63,32 +63,83 @@
 </template>
 
 <script setup>
-import { ref, nextTick } from 'vue'
+import { ref, computed, nextTick } from 'vue'
 import { MessageCircle, Send, AlertCircle } from 'lucide-vue-next'
+import { marked } from 'marked'
 import { chatAsk } from '../api/client'
+
+// Configure marked for safe defaults — no raw HTML passthrough
+marked.setOptions({
+  breaks: true,
+  gfm: true,
+})
+
+const props = defineProps({
+  context: {
+    type: Object,
+    default: null,
+  },
+})
 
 const chatContainer = ref(null)
 const inputQuery = ref('')
 const isLoading = ref(false)
 const chatError = ref(null)
 
+const isEmailContext = computed(() => {
+  return Boolean(props.context && ('verdict' in props.context || 'risk_score' in props.context))
+})
+
+const isBatchContext = computed(() => {
+  return Boolean(props.context && ('batch_size' in props.context || 'cluster_count' in props.context))
+})
+
+const modeLabel = computed(() => {
+  if (isEmailContext.value) return 'Analysis Assistant'
+  if (isBatchContext.value) return 'Batch Assistant'
+  return 'Freeform Mode'
+})
+
+const modeDescription = computed(() => {
+  if (isEmailContext.value) {
+    return 'Ask questions about this email report or paste suspicious messages to analyze.'
+  }
+  if (isBatchContext.value) {
+    return 'Ask questions about this batch investigation or paste suspicious messages to analyze.'
+  }
+  return 'Paste any suspicious message snippet, SMS, or link to ask the local AI assistant if it looks like a scam.'
+})
+
+const inputPlaceholder = computed(() => {
+  if (isEmailContext.value) {
+    return "e.g. 'Why was this flagged?' or paste a suspicious message..."
+  }
+  if (isBatchContext.value) {
+    return "e.g. 'How many phishing campaigns were found?' or paste a message..."
+  }
+  return "e.g. 'Is this message asking for wire transfer legitimate?'"
+})
+
+const initialText = computed(() => {
+  if (isEmailContext.value) {
+    return 'Hello! I am your security assistant. I have the forensic findings for this email loaded. Ask me anything about this report, or paste another message to evaluate.'
+  }
+  if (isBatchContext.value) {
+    return 'Hello! I am your security assistant. I have the batch triage findings loaded. Ask me about detected campaign clusters, or paste any message to evaluate.'
+  }
+  return 'Hello! I am your local security assistant. You can paste any suspicious email text, SMS message, or prompt to ask whether it appears fraudulent.'
+})
+
 const messages = ref([
   {
     sender: 'assistant',
-    text: 'Hello! I am your local security assistant. You can paste any suspicious email text, SMS message, or prompt to ask whether it appears fraudulent.',
+    text: initialText.value,
   },
 ])
 
 function formatMessage(text) {
   if (!text) return ''
-  // Basic markdown bold replacement and line break sanitization
-  let formatted = text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-    .replace(/\n/g, '<br/>')
-  return formatted
+  return marked.parse(text)
 }
 
 async function scrollToBottom() {
@@ -110,7 +161,7 @@ async function sendMessage() {
   scrollToBottom()
 
   try {
-    const res = await chatAsk(query)
+    const res = await chatAsk(query, props.context)
     messages.value.push({ sender: 'assistant', text: res.response })
   } catch (err) {
     console.error('Chat query failed', err)
@@ -273,5 +324,35 @@ async function sendMessage() {
 
 .send-btn {
   padding: 10px 18px;
+}
+
+/* Markdown content inside chat bubbles */
+.bubble-text :deep(p) {
+  margin: 0 0 6px 0;
+}
+
+.bubble-text :deep(p:last-child) {
+  margin-bottom: 0;
+}
+
+.bubble-text :deep(ul),
+.bubble-text :deep(ol) {
+  margin: 4px 0 6px 0;
+  padding-left: 20px;
+}
+
+.bubble-text :deep(li) {
+  margin-bottom: 2px;
+}
+
+.bubble-text :deep(strong) {
+  font-weight: 600;
+}
+
+.bubble-text :deep(code) {
+  background-color: rgba(0, 0, 0, 0.06);
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-size: 0.88em;
 }
 </style>

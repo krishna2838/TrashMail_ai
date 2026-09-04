@@ -1,17 +1,27 @@
 <template>
-  <div class="card hop-card">
+  <div :class="['card', 'hop-card', { 'details-only-card': onlyDetails }]">
     <div class="card-header">
       <div class="title-with-icon">
         <Server :size="20" class="header-icon" />
-        <h2>Email Relay Hop Timeline</h2>
+        <h2>{{ onlyDetails ? 'Full MTA Hop Trace' : 'Email Relay Hop Timeline' }}</h2>
       </div>
       <span class="badge badge-subtle">{{ hops.length }} {{ hops.length === 1 ? 'Hop' : 'Hops' }}</span>
     </div>
-    <p class="section-desc">
-      Chronological sequence of mail transfer agents (MTAs) that routed this message, from origin to recipient inbox.
+    <p v-if="!hideDetails" class="section-desc">
+      Chronological sequence of <abbr title="Mail Transfer Agent: a server that receives and forwards email across the internet">mail transfer agents (MTAs)</abbr> that routed this message, from origin to recipient inbox.
     </p>
 
-    <div v-if="hops && hops.length > 0" class="timeline">
+    <!-- Part C — Plain-language summary (Hidden in onlyDetails mode) -->
+    <div v-if="!onlyDetails && hops && hops.length > 0" class="hop-summary-banner">
+      <span class="hop-summary-text">
+        This email passed through <strong>{{ hops.length }}</strong> 
+        <abbr title="Mail Transfer Agent (MTA): an intermediate server that forwards email across the internet">mail {{ hops.length === 1 ? 'server' : 'servers' }}</abbr>
+        before reaching the inbox<template v-if="originCountry">, originating from a server in <strong>{{ originCountry }}</strong></template>.
+      </span>
+    </div>
+
+    <!-- Detailed Hop Timeline (Technical: hidden when hideDetails is true) -->
+    <div v-if="!hideDetails && hops && hops.length > 0" class="timeline">
       <div 
         v-for="(hop, idx) in sortedHops" 
         :key="hop.sequence || idx" 
@@ -58,7 +68,7 @@
       </div>
     </div>
 
-    <div v-else class="empty-state">
+    <div v-else-if="!hideDetails" class="empty-state">
       <p>No Received header hops found in this email.</p>
     </div>
   </div>
@@ -77,6 +87,24 @@ const props = defineProps({
     type: String,
     default: '',
   },
+  originGeo: {
+    type: Object,
+    default: null,
+  },
+  hideDetails: {
+    type: Boolean,
+    default: false,
+  },
+  onlyDetails: {
+    type: Boolean,
+    default: false,
+  },
+})
+
+// Extract country for plain-language summary
+const originCountry = computed(() => {
+  if (!props.originGeo || typeof props.originGeo !== 'object') return ''
+  return props.originGeo.country || ''
 })
 
 // Sort hops chronologically: sequence 1 first
@@ -278,5 +306,37 @@ function formatTimestamp(ts) {
   padding: 24px;
   text-align: center;
   color: var(--text-muted);
+}
+
+/* Part C — Hop summary banner */
+.hop-summary-banner {
+  background-color: var(--bg-page);
+  border: 1px solid var(--border-light);
+  border-left: 3px solid var(--accent);
+  border-radius: 6px;
+  padding: 10px 14px;
+}
+
+.hop-summary-text {
+  font-size: 0.92rem;
+  color: var(--text-main);
+  line-height: 1.5;
+}
+
+.hop-summary-text strong {
+  font-weight: 600;
+  color: var(--accent);
+}
+
+abbr {
+  text-decoration: underline dotted;
+  cursor: help;
+}
+
+.details-only-card {
+  box-shadow: none;
+  background: transparent;
+  border: none;
+  padding: 0;
 }
 </style>
