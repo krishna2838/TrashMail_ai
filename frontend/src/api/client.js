@@ -52,9 +52,10 @@ export async function chatExplain(emailHash, analysis = null) {
   return response.data
 }
 
-export async function chatAsk(message, context = null) {
+export async function chatAsk(message, context = null, history = []) {
   const payload = { message }
   if (context) payload.context = context
+  if (history && history.length > 0) payload.history = history
   const response = await api.post('/api/chat/ask', payload)
   return response.data
 }

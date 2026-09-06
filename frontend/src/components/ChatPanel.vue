@@ -153,6 +153,15 @@ async function sendMessage() {
   const query = inputQuery.value.trim()
   if (!query || isLoading.value) return
 
+  // Extract up to last 10 turns of history prior to sending this query
+  const history = messages.value
+    .filter((m) => m.text && (m.sender === 'user' || m.sender === 'assistant'))
+    .map((m) => ({
+      role: m.sender === 'user' ? 'user' : 'assistant',
+      content: m.text,
+    }))
+    .slice(-10)
+
   // Push user message
   messages.value.push({ sender: 'user', text: query })
   inputQuery.value = ''
@@ -161,7 +170,7 @@ async function sendMessage() {
   scrollToBottom()
 
   try {
-    const res = await chatAsk(query, props.context)
+    const res = await chatAsk(query, props.context, history)
     messages.value.push({ sender: 'assistant', text: res.response })
   } catch (err) {
     console.error('Chat query failed', err)

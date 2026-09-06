@@ -24,7 +24,7 @@ class Settings(BaseSettings):
     OLLAMA_URL: str = "http://localhost:11434"
     OLLAMA_PRIMARY_MODEL: str = "qwen2.5:7b"
     OLLAMA_FALLBACK_MODEL: str = "qwen2.5:3b"
-    OLLAMA_TIMEOUT_SECONDS: int = 25
+    OLLAMA_TIMEOUT_SECONDS: int = 45
 
     model_config = SettingsConfigDict(
         env_file=".env",

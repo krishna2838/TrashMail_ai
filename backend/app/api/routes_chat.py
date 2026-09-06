@@ -7,7 +7,7 @@ from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, Field
 
 from app.api.routes_analyze import get_cached_analysis
-from app.chat.ollama_client import OllamaUnavailableError, ask_ollama
+from app.chat.ollama_client import OllamaUnavailableError, ask_ollama, ask_ollama_chat
 from app.chat.prompts import build_explain_prompt, build_freeform_prompt
 
 router = APIRouter(tags=["Chat"])
@@ -32,6 +32,10 @@ class FreeformRequest(BaseModel):
     message: str = Field(..., description="Text to analyze for scam/phishing indicators.")
     context: Optional[Dict[str, Any]] = Field(
         None, description="Optional current email or batch analysis context to guide the assistant."
+    )
+    history: Optional[list[Dict[str, Any]]] = Field(
+        default_factory=list,
+        description="Optional recent chat history (oldest first). Server caps to the last 10 messages.",
     )
 
 
@@ -78,24 +82,39 @@ async def chat_explain(body: ExplainRequest) -> dict[str, str]:
 
 @router.post(
     "/chat/ask",
-    summary="Freeform Scam Check",
+    summary="Freeform Scam Check & Assistant",
     description=(
-        "Paste any text (email snippet, message, etc.) and get a scam/phishing analysis "
-        "from the local Ollama LLM."
+        "Ask a question or paste text to analyze for scam/phishing indicators "
+        "with multi-turn conversational memory via the local Ollama LLM."
     ),
 )
 async def chat_ask(body: FreeformRequest) -> dict[str, str]:
-    """Analyze freeform text for scam/phishing indicators using the local LLM."""
+    """Analyze freeform text or answer follow-up questions using the local LLM."""
     if not body.message.strip():
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Message cannot be empty.",
         )
 
-    system, prompt = build_freeform_prompt(body.message, context=body.context)
+    system_prompt = build_freeform_prompt(context=body.context)
+
+    # Build history, capping to the last 10 valid turns
+    history_turns: list[dict[str, str]] = []
+    if body.history:
+        for turn in body.history[-10:]:
+            role = turn.get("role")
+            content = turn.get("content")
+            if role in ("user", "assistant") and content:
+                history_turns.append({"role": role, "content": str(content)})
+
+    messages = [
+        {"role": "system", "content": system_prompt},
+        *history_turns,
+        {"role": "user", "content": body.message},
+    ]
 
     try:
-        response_text = await ask_ollama(prompt, system)
+        response_text = await ask_ollama_chat(messages)
         return {"response": response_text}
     except OllamaUnavailableError as exc:
         raise HTTPException(
