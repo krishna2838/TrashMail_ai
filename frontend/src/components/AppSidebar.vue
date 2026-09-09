@@ -69,9 +69,8 @@ const store = useAnalysisStore()
   flex-shrink: 0;
   background-color: var(--bg-card);
   border-right: 1px solid var(--border-light);
-  min-height: 100vh;
-  position: sticky;
-  top: 0;
+  height: 100vh;
+  overflow-y: auto;
   display: flex;
   flex-direction: column;
   padding: 20px 0 24px;
