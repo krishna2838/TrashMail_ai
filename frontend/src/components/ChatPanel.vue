@@ -79,6 +79,18 @@ const props = defineProps({
     type: Object,
     default: null,
   },
+  /**
+   * Optional per-message context builder. When provided, it is called with
+   * the outgoing query text just before send and its return value replaces
+   * `context` for that one request — used to attach only the specific
+   * nodes/data the user's message is actually asking about instead of dumping
+   * an entire graph into every prompt. Return null/undefined to fall back to
+   * `props.context`.
+   */
+  contextBuilder: {
+    type: Function,
+    default: null,
+  },
 })
 
 const chatContainer = ref(null)
@@ -90,12 +102,20 @@ const isEmailContext = computed(() => {
   return Boolean(props.context && ('verdict' in props.context || 'risk_score' in props.context))
 })
 
+const isClustersOverviewContext = computed(() => {
+  return Boolean(props.context && 'total_clusters' in props.context && 'top_clusters' in props.context)
+})
+
 const isBatchContext = computed(() => {
+  // Batch shape reuses generic keys; check clusters-overview first (above) so
+  // this doesn't misfire on the clusters context.
+  if (isClustersOverviewContext.value) return false
   return Boolean(props.context && ('batch_size' in props.context || 'cluster_count' in props.context))
 })
 
 const modeLabel = computed(() => {
   if (isEmailContext.value) return 'Analysis Assistant'
+  if (isClustersOverviewContext.value) return 'Clusters Assistant'
   if (isBatchContext.value) return 'Batch Assistant'
   return 'Freeform Mode'
 })
@@ -103,6 +123,9 @@ const modeLabel = computed(() => {
 const modeDescription = computed(() => {
   if (isEmailContext.value) {
     return 'Ask questions about this email report or paste suspicious messages to analyze.'
+  }
+  if (isClustersOverviewContext.value) {
+    return 'Ask questions about detected campaigns across every analyzed email, or paste new suspicious text.'
   }
   if (isBatchContext.value) {
     return 'Ask questions about this batch investigation or paste suspicious messages to analyze.'
@@ -114,6 +137,9 @@ const inputPlaceholder = computed(() => {
   if (isEmailContext.value) {
     return "e.g. 'Why was this flagged?' or paste a suspicious message..."
   }
+  if (isClustersOverviewContext.value) {
+    return "e.g. 'Which campaign is largest?' or 'What indicators tie CLU-01 together?'"
+  }
   if (isBatchContext.value) {
     return "e.g. 'How many phishing campaigns were found?' or paste a message..."
   }
@@ -123,6 +149,9 @@ const inputPlaceholder = computed(() => {
 const initialText = computed(() => {
   if (isEmailContext.value) {
     return 'Hello! I am your security assistant. I have the forensic findings for this email loaded. Ask me anything about this report, or paste another message to evaluate.'
+  }
+  if (isClustersOverviewContext.value) {
+    return 'Hello! I have the cross-database clusters overview loaded. Ask me about the detected campaigns, shared infrastructure, or which clusters look most active.'
   }
   if (isBatchContext.value) {
     return 'Hello! I am your security assistant. I have the batch triage findings loaded. Ask me about detected campaign clusters, or paste any message to evaluate.'
@@ -170,7 +199,16 @@ async function sendMessage() {
   scrollToBottom()
 
   try {
-    const res = await chatAsk(query, props.context, history)
+    let ctx = props.context
+    if (typeof props.contextBuilder === 'function') {
+      try {
+        const built = props.contextBuilder(query)
+        if (built) ctx = built
+      } catch (buildErr) {
+        console.warn('contextBuilder threw; falling back to props.context', buildErr)
+      }
+    }
+    const res = await chatAsk(query, ctx, history)
     messages.value.push({ sender: 'assistant', text: res.response })
   } catch (err) {
     console.error('Chat query failed', err)

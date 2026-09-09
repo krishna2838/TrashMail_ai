@@ -78,7 +78,7 @@
               <div class="meter-track">
                 <div
                   class="meter-fill"
-                  :style="{ width: `${clampScore(item.risk_score)}%`, backgroundColor: getVerdictColor(item.verdict) }"
+                  :style="{ width: `${clampScore(item.risk_score)}%`, backgroundImage: riskGradient(item.risk_score) }"
                 ></div>
               </div>
             </div>
@@ -138,6 +138,7 @@ import {
 } from 'lucide-vue-next'
 import { useAnalysisStore } from '../stores/analysis'
 import { getHistory, getHistoryItem } from '../api/client'
+import { riskGradient } from '../utils/riskGradient'
 
 const router = useRouter()
 const store = useAnalysisStore()
@@ -407,12 +408,13 @@ onMounted(loadHistory)
   display: flex;
   flex-direction: column;
   gap: 10px;
-  transition: box-shadow 0.15s ease, border-color 0.15s ease;
+  transition: box-shadow 0.18s ease, border-color 0.15s ease, transform 0.18s ease;
 }
 
 .inv-card:hover {
   border-color: var(--accent-light);
-  box-shadow: 0 2px 6px rgba(29, 78, 216, 0.08);
+  box-shadow: 0 6px 14px rgba(15, 23, 42, 0.08), 0 2px 4px rgba(29, 78, 216, 0.06);
+  transform: translateY(-2px);
 }
 
 .card-top {

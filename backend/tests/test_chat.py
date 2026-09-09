@@ -95,6 +95,98 @@ def test_build_freeform_prompt_with_batch_context():
     assert "Phishing/Scam: 3" in system
 
 
+def test_build_freeform_prompt_with_clusters_overview_context():
+    """Freeform prompt incorporates the cross-database clusters overview context."""
+    context = {
+        "total_emails": 42,
+        "total_clusters": 3,
+        "top_clusters": [
+            {"cluster_id": "CLU-01", "representative_subject": "YONO KYC", "email_count": 6, "highest_risk_score": 95},
+            {"cluster_id": "CLU-02", "representative_subject": "Delivery fee", "email_count": 4, "highest_risk_score": 82},
+        ],
+    }
+    system = build_freeform_prompt(context=context)
+    assert "CURRENT CLUSTERS OVERVIEW CONTEXT:" in system
+    assert "Total Analyzed Emails in Database: 42" in system
+    assert "Detected Campaign Clusters (2+ emails sharing infrastructure): 3" in system
+    assert "CLU-01" in system
+    assert "YONO KYC" in system
+    assert "6 emails" in system
+    assert "max risk 95" in system
+    # Must NOT trip the batch branch
+    assert "CURRENT BATCH TRIAGE CONTEXT:" not in system
+
+
+def test_build_freeform_prompt_clusters_context_without_relevant_nodes_uses_summary():
+    """When relevant_nodes is absent or empty, the branch falls back to the
+    Phase-23 summary-only instruction and does NOT render an empty
+    'Relevant Nodes' header.
+    """
+    context = {
+        "total_emails": 8,
+        "total_clusters": 2,
+        "top_clusters": [
+            {"cluster_id": "CLU-01", "representative_subject": "s1", "email_count": 3, "highest_risk_score": 88},
+        ],
+    }
+    system = build_freeform_prompt(context=context)
+    assert "CURRENT CLUSTERS OVERVIEW CONTEXT:" in system
+    assert "Relevant Nodes For This Question" not in system
+    assert "cross-database clusters overview" in system
+
+    # Same when the key is present but the list is empty
+    context_with_empty = dict(context)
+    context_with_empty["relevant_nodes"] = []
+    system2 = build_freeform_prompt(context=context_with_empty)
+    assert "Relevant Nodes For This Question" not in system2
+    assert "cross-database clusters overview" in system2
+
+
+def test_build_freeform_prompt_clusters_context_with_relevant_nodes():
+    """When relevant_nodes is attached, specific node facts must appear in the prompt."""
+    context = {
+        "total_emails": 10,
+        "total_clusters": 2,
+        "top_clusters": [
+            {"cluster_id": "CLU-01", "representative_subject": "s", "email_count": 3, "highest_risk_score": 90},
+        ],
+        "relevant_nodes": [
+            {
+                "node_kind": "indicator",
+                "type": "ip",
+                "value": "185.220.101.5",
+                "connected_email_count": 3,
+                "connected_emails": [
+                    {"subject": "KYC Reverify Now", "verdict": "Phishing/Scam"},
+                    {"subject": "Delivery Fee Due", "verdict": "Phishing/Scam"},
+                ],
+            },
+            {
+                "node_kind": "email",
+                "id": "hash-a",
+                "subject": "KYC Reverify Now",
+                "sender": "attacker@evil.io",
+                "verdict": "Phishing/Scam",
+                "risk_score": 92,
+                "connected_indicators": [
+                    {"type": "ip", "value": "185.220.101.5"},
+                    {"type": "domain", "value": "evil.io"},
+                ],
+            },
+        ],
+    }
+    system = build_freeform_prompt(context=context)
+    assert "Relevant Nodes For This Question" in system
+    # Indicator specifics
+    assert "185.220.101.5" in system
+    assert "connected to 3 email(s)" in system
+    assert "KYC Reverify Now" in system
+    # Email specifics
+    assert "attacker@evil.io" in system
+    assert "risk 92/100" in system
+    assert "evil.io" in system
+
+
 
 # ── Chat API route tests ─────────────────────────────────────────────
 

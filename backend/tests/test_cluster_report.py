@@ -126,6 +126,31 @@ def test_get_cluster_report_missing_members_do_not_crash():
     assert report["shared_evidence"] == []
 
 
+def test_first_last_observed_recovered_from_row_when_missing_in_json():
+    """Regression: analysis dicts saved via the /api/analyze route don't
+    contain `analyzed_at` themselves — the field lives on the SQLite row.
+    The cluster report must still return real dates in that case.
+    """
+    # Deliberately omit analyzed_at from the payloads — matches production data.
+    _seed_no_ts = lambda hid, **kw: save_investigation({
+        "email_hash": hid,
+        "subject": kw.pop("subject", f"S {hid}"),
+        "sender": kw.pop("sender", f"u-{hid}@x.io"),
+        "verdict": "Phishing/Scam",
+        "risk_score": kw.pop("risk_score", 80),
+        "domains": ["shared.example"],
+        **kw,
+    })
+    _seed_no_ts("nt1")
+    _seed_no_ts("nt2")
+
+    report = get_cluster_report(["nt1", "nt2"])
+
+    assert report["first_observed"] is not None
+    assert report["last_observed"] is not None
+    assert "unknown times" not in report["executive_summary"]
+
+
 def test_get_cluster_report_empty_input():
     report = get_cluster_report([])
     assert report["linked_complaints"] == 0

@@ -184,7 +184,13 @@ def list_investigations(limit: int = 50) -> list[dict[str, Any]]:
 
 
 def get_investigation(id: str) -> Optional[dict[str, Any]]:
-    """Retrieve full analysis result dictionary by email_hash."""
+    """Retrieve full analysis result dictionary by email_hash.
+
+    Note: `analyzed_at` is not part of the analysis dict at save time (the
+    route handler does not populate it), so we inject it from the row's own
+    column on read. Without this, downstream aggregators see None even
+    though the record was in fact analyzed at a known time.
+    """
     try:
         with Session(engine) as session:
             record = session.exec(
@@ -194,7 +200,14 @@ def get_investigation(id: str) -> Optional[dict[str, Any]]:
             if not record:
                 return None
 
-            return json.loads(record.full_result_json)
+            data = json.loads(record.full_result_json)
+            if isinstance(data, dict) and not data.get("analyzed_at") and record.analyzed_at:
+                data["analyzed_at"] = (
+                    record.analyzed_at.isoformat()
+                    if hasattr(record.analyzed_at, "isoformat")
+                    else str(record.analyzed_at)
+                )
+            return data
     except Exception as exc:
         logger.error("Failed to retrieve investigation %s from SQLite: %s", id, exc)
         return None

@@ -216,11 +216,12 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
 import { FileText, Inbox, Search, Printer, Sparkles } from 'lucide-vue-next'
 import { getGraphOverview, getClusterReport, chatAsk } from '../api/client'
 
 const router = useRouter()
+const route = useRoute()
 
 const clusters = ref([])
 const loadingClusters = ref(true)
@@ -260,12 +261,48 @@ function formatDate(s) {
   try { return new Date(s).toLocaleString() } catch { return s }
 }
 
+function preselectedIds() {
+  const raw = route.query.ids
+  if (!raw) return null
+  const str = Array.isArray(raw) ? raw[0] : raw
+  const ids = String(str).split(',').map(s => s.trim()).filter(Boolean)
+  return ids.length > 0 ? ids : null
+}
+
+function findClusterByIds(ids) {
+  if (!ids || ids.length === 0) return null
+  const wanted = new Set(ids)
+  return clusters.value.find(c => {
+    const members = c.member_email_ids || []
+    if (members.length !== wanted.size) return false
+    return members.every(m => wanted.has(m))
+  }) || null
+}
+
 async function loadClusters() {
   loadingClusters.value = true
   try {
     const data = await getGraphOverview(100)
     clusters.value = data.clusters || []
-    if (clusters.value.length > 0) {
+
+    const linkedIds = preselectedIds()
+    if (linkedIds) {
+      const match = findClusterByIds(linkedIds)
+      if (match) {
+        selectCluster(match)
+      } else {
+        // The cluster shape shifted (a new analysis landed since the link was
+        // built) — still generate the report for the requested member set so
+        // the deep link is never a dead end.
+        selectCluster({
+          cluster_id: 'CLU-LINKED',
+          representative_subject: 'Linked cluster',
+          member_email_ids: linkedIds,
+          email_count: linkedIds.length,
+          highest_risk_score: 0,
+        })
+      }
+    } else if (clusters.value.length > 0) {
       selectCluster(clusters.value[0])
     }
   } catch (err) {
@@ -427,7 +464,7 @@ onMounted(loadClusters)
   padding: 10px 12px;
   border-radius: 8px;
   cursor: pointer;
-  transition: background-color 0.15s ease;
+  transition: background-color 0.15s ease, box-shadow 0.18s ease, transform 0.18s ease;
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -435,6 +472,8 @@ onMounted(loadClusters)
 
 .cluster-item:hover {
   background: var(--bg-page);
+  box-shadow: 0 4px 10px rgba(15, 23, 42, 0.06);
+  transform: translateY(-2px);
 }
 
 .cluster-item-active {

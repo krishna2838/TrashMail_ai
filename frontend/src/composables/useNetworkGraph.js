@@ -64,6 +64,10 @@ export function useNetworkGraph(options = {}) {
   let resizeObserver = null
   let container = null
   let heightPx = height
+  let nodesDataSet = null
+  let edgesDataSet = null
+  let baseNodeStyles = new Map()
+  let baseEdgeStyles = new Map()
 
   function setSize() {
     if (networkInstance) networkInstance.setSize('100%', heightPx)
@@ -137,10 +141,11 @@ export function useNetworkGraph(options = {}) {
       smooth: { type: 'cubicBezier', roundness: 0.25 },
     }))
 
-    const networkData = {
-      nodes: new DataSet(visNodes),
-      edges: new DataSet(visEdges),
-    }
+    nodesDataSet = new DataSet(visNodes)
+    edgesDataSet = new DataSet(visEdges)
+    baseNodeStyles = new Map(visNodes.map(n => [n.id, { color: n.color, font: n.font }]))
+    baseEdgeStyles = new Map(visEdges.map(e => [e.id, { color: e.color }]))
+    const networkData = { nodes: nodesDataSet, edges: edgesDataSet }
 
     const visOptions = {
       autoResize: true,
@@ -230,6 +235,70 @@ export function useNetworkGraph(options = {}) {
     }
   }
 
+  /**
+   * Highlight a subset of node IDs; dim the rest. Only visual style is
+   * updated via DataSet.update() — no re-render, no physics restart, so the
+   * Phase 15 stabilization-freeze is preserved.
+   *
+   * Pass null (or an empty set) to restore all nodes/edges to their base
+   * styling.
+   */
+  function setHighlight(nodeIdSet) {
+    if (!networkInstance || !nodesDataSet || !edgesDataSet) return
+    const active = nodeIdSet && (nodeIdSet.size || nodeIdSet.length) ? nodeIdSet : null
+    const has = (id) => (active instanceof Set ? active.has(id) : (Array.isArray(active) ? active.includes(id) : false))
+
+    const nodeUpdates = []
+    for (const [id, base] of baseNodeStyles.entries()) {
+      if (!active || has(id)) {
+        nodeUpdates.push({ id, color: base.color, font: base.font, opacity: 1 })
+      } else {
+        nodeUpdates.push({
+          id,
+          opacity: 0.18,
+          font: { ...base.font, color: 'rgba(17,24,39,0.35)' },
+        })
+      }
+    }
+    nodesDataSet.update(nodeUpdates)
+
+    const edgeUpdates = []
+    for (const [id, base] of baseEdgeStyles.entries()) {
+      const edge = edgesDataSet.get(id)
+      if (!edge) continue
+      const bothIn = !active || (has(edge.from) && has(edge.to))
+      if (bothIn) {
+        edgeUpdates.push({ id, color: base.color })
+      } else {
+        edgeUpdates.push({
+          id,
+          color: { color: 'rgba(156,163,175,0.18)', highlight: 'rgba(156,163,175,0.18)', hover: 'rgba(156,163,175,0.18)', opacity: 0.18 },
+        })
+      }
+    }
+    edgesDataSet.update(edgeUpdates)
+  }
+
+  function clearHighlight() {
+    setHighlight(null)
+  }
+
+  /**
+   * Center the view on a single node without restarting physics — visual
+   * pan/zoom only, node positions are not changed.
+   */
+  function focusNode(nodeId, opts = {}) {
+    if (!networkInstance || !nodeId) return
+    try {
+      networkInstance.focus(nodeId, {
+        scale: opts.scale ?? 1.1,
+        animation: opts.animation ?? { duration: 350, easingFunction: 'easeInOutQuad' },
+      })
+    } catch (e) {
+      // ignore — vis-network throws if the id is not in the current dataset
+    }
+  }
+
   function destroy() {
     if (resizeObserver) {
       resizeObserver.disconnect()
@@ -243,5 +312,5 @@ export function useNetworkGraph(options = {}) {
 
   onBeforeUnmount(destroy)
 
-  return { render, fit, setSize, destroy }
+  return { render, fit, setSize, destroy, setHighlight, clearHighlight, focusNode }
 }

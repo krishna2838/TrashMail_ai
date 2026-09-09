@@ -4,7 +4,11 @@
 
     <div class="app-body">
       <main class="main-content">
-        <router-view />
+        <router-view v-slot="{ Component }">
+          <Transition name="route-fade" mode="out-in">
+            <component :is="Component" />
+          </Transition>
+        </router-view>
       </main>
       <ModelInfoFooter />
     </div>
@@ -33,5 +37,15 @@ import ModelInfoFooter from './components/ModelInfoFooter.vue'
 .main-content {
   flex: 1;
   width: 100%;
+}
+
+.route-fade-enter-active,
+.route-fade-leave-active {
+  transition: opacity 0.18s ease;
+}
+
+.route-fade-enter-from,
+.route-fade-leave-to {
+  opacity: 0;
 }
 </style>

@@ -52,6 +52,44 @@
         </div>
       </div>
 
+      <!-- Verdict distribution donut -->
+      <div v-if="stats.total > 0" class="card donut-card">
+        <div class="donut-header">
+          <h2>Verdict Distribution</h2>
+          <span class="donut-total">{{ stats.total }} total</span>
+        </div>
+        <div class="donut-body">
+          <div
+            class="donut"
+            :style="{ background: donutGradient }"
+            :aria-label="`Phishing ${donutPct.phishing}%, Suspicious ${donutPct.suspicious}%, Safe ${donutPct.safe}%`"
+            role="img"
+          >
+            <div class="donut-hole">
+              <div class="donut-hole-num">{{ stats.total }}</div>
+              <div class="donut-hole-label">emails</div>
+            </div>
+          </div>
+          <ul class="donut-legend">
+            <li>
+              <span class="legend-swatch swatch-phish"></span>
+              <span class="legend-name">Phishing/Scam</span>
+              <span class="legend-value">{{ stats.phishing }} <span class="legend-pct">({{ donutPct.phishing }}%)</span></span>
+            </li>
+            <li>
+              <span class="legend-swatch swatch-suspicious"></span>
+              <span class="legend-name">Suspicious</span>
+              <span class="legend-value">{{ stats.suspicious }} <span class="legend-pct">({{ donutPct.suspicious }}%)</span></span>
+            </li>
+            <li>
+              <span class="legend-swatch swatch-safe"></span>
+              <span class="legend-name">Safe</span>
+              <span class="legend-value">{{ stats.safe }} <span class="legend-pct">({{ donutPct.safe }}%)</span></span>
+            </li>
+          </ul>
+        </div>
+      </div>
+
       <!-- Recent activity -->
       <div class="card table-card">
         <div class="table-header">
@@ -129,6 +167,35 @@ const stats = computed(() => {
 })
 
 const recentItems = computed(() => historyList.value.slice(0, 10))
+
+const donutPct = computed(() => {
+  const t = stats.value.total || 0
+  if (t === 0) return { phishing: 0, suspicious: 0, safe: 0 }
+  return {
+    phishing: Math.round((stats.value.phishing / t) * 100),
+    suspicious: Math.round((stats.value.suspicious / t) * 100),
+    safe: Math.round((stats.value.safe / t) * 100),
+  }
+})
+
+const donutGradient = computed(() => {
+  const t = stats.value.total || 0
+  if (t === 0) return '#F1F3F5'
+  const phishDeg = (stats.value.phishing / t) * 360
+  const suspDeg = (stats.value.suspicious / t) * 360
+  const start1 = 0
+  const end1 = phishDeg
+  const start2 = end1
+  const end2 = end1 + suspDeg
+  const start3 = end2
+  const end3 = 360
+  return (
+    `conic-gradient(` +
+    `var(--verdict-phish) ${start1}deg ${end1}deg,` +
+    `var(--verdict-suspicious) ${start2}deg ${end2}deg,` +
+    `var(--verdict-safe) ${start3}deg ${end3}deg)`
+  )
+})
 
 function formatDate(isoStr) {
   if (!isoStr) return 'Just now'
@@ -282,6 +349,118 @@ onMounted(loadHistory)
   width: 10px;
   height: 10px;
   border-radius: 50%;
+}
+
+/* Donut */
+.donut-card {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.donut-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+
+.donut-header h2 {
+  font-size: 1.05rem;
+  margin: 0;
+}
+
+.donut-total {
+  font-size: 0.82rem;
+  color: var(--text-muted);
+}
+
+.donut-body {
+  display: flex;
+  align-items: center;
+  gap: 32px;
+  flex-wrap: wrap;
+}
+
+.donut {
+  width: 160px;
+  height: 160px;
+  border-radius: 50%;
+  position: relative;
+  flex-shrink: 0;
+  transition: transform 0.4s ease;
+}
+
+.donut-hole {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 96px;
+  height: 96px;
+  border-radius: 50%;
+  background: var(--bg-card);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  box-shadow: inset 0 0 0 1px var(--border-light);
+}
+
+.donut-hole-num {
+  font-size: 1.6rem;
+  font-weight: 700;
+  color: var(--text-main);
+  line-height: 1;
+}
+
+.donut-hole-label {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-top: 2px;
+}
+
+.donut-legend {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 200px;
+}
+
+.donut-legend li {
+  display: grid;
+  grid-template-columns: 14px 1fr auto;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.9rem;
+}
+
+.legend-swatch {
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+}
+
+.swatch-phish { background: var(--verdict-phish); }
+.swatch-suspicious { background: var(--verdict-suspicious); }
+.swatch-safe { background: var(--verdict-safe); }
+
+.legend-name {
+  color: var(--text-main);
+}
+
+.legend-value {
+  font-weight: 600;
+  color: var(--text-main);
+}
+
+.legend-pct {
+  color: var(--text-muted);
+  font-weight: 500;
 }
 
 .dot-total { background: var(--accent); }

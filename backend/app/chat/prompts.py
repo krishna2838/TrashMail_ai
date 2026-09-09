@@ -160,6 +160,75 @@ def build_freeform_prompt(
                 "analyze the pasted text."
             )
             system = system + "\n" + "\n".join(ctx_lines)
+        elif "total_clusters" in actual_context and "top_clusters" in actual_context:
+            total_emails = actual_context.get("total_emails", 0)
+            total_clusters = actual_context.get("total_clusters", 0)
+            ctx_lines = [
+                "\n\nCURRENT CLUSTERS OVERVIEW CONTEXT:",
+                f"- Total Analyzed Emails in Database: {total_emails}",
+                f"- Detected Campaign Clusters (2+ emails sharing infrastructure): {total_clusters}",
+            ]
+            top = actual_context.get("top_clusters") or []
+            if isinstance(top, list) and top:
+                ctx_lines.append("- Top Clusters:")
+                for c in top[:5]:
+                    if not isinstance(c, dict):
+                        continue
+                    cid = c.get("cluster_id", "?")
+                    subj = c.get("representative_subject", "(no subject)")
+                    ec = c.get("email_count", "?")
+                    hr = c.get("highest_risk_score", "?")
+                    ctx_lines.append(f"  · {cid}: \"{subj}\" — {ec} emails, max risk {hr}/100")
+            relevant = actual_context.get("relevant_nodes")
+            if isinstance(relevant, list) and relevant:
+                ctx_lines.append("- Relevant Nodes For This Question (matched against the loaded graph):")
+                for rn in relevant[:8]:
+                    if not isinstance(rn, dict):
+                        continue
+                    kind = rn.get("node_kind")
+                    if kind == "email":
+                        subj = rn.get("subject") or "(No Subject)"
+                        sender = rn.get("sender") or "unknown sender"
+                        verdict = rn.get("verdict") or "Unknown"
+                        risk = rn.get("risk_score")
+                        risk_str = f", risk {risk}/100" if risk is not None else ""
+                        ctx_lines.append(
+                            f"  · EMAIL: \"{subj}\" — from {sender} — verdict {verdict}{risk_str}"
+                        )
+                        inds = rn.get("connected_indicators") or []
+                        if inds:
+                            ind_strs = [
+                                f"{i.get('type', '?')}:{i.get('value', '?')}"
+                                for i in inds if isinstance(i, dict)
+                            ]
+                            ctx_lines.append(
+                                f"      connected indicators: {', '.join(ind_strs)}"
+                            )
+                    elif kind == "indicator":
+                        t = rn.get("type", "indicator")
+                        v = rn.get("value", "?")
+                        emails = rn.get("connected_emails") or []
+                        total_conn = rn.get("connected_email_count", len(emails))
+                        header = f"  · {t.upper()}: {v} — connected to {total_conn} email(s)"
+                        ctx_lines.append(header)
+                        for em in emails[:8]:
+                            if not isinstance(em, dict):
+                                continue
+                            es = em.get("subject") or "(No Subject)"
+                            ev = em.get("verdict") or "Unknown"
+                            ctx_lines.append(f"      · \"{es}\" [{ev}]")
+                ctx_lines.append(
+                    "When the question is about one of the Relevant Nodes above, answer with those "
+                    "specific facts (subjects, verdicts, connected values) rather than generic "
+                    "language. If the question is broader, fall back to the cluster-level summary."
+                )
+            else:
+                ctx_lines.append(
+                    "The user is viewing the cross-database clusters overview. Answer questions about the "
+                    "detected campaigns, their scale, or shared infrastructure using this context. If they "
+                    "paste new text to evaluate, analyze the pasted text."
+                )
+            system = system + "\n" + "\n".join(ctx_lines)
         elif "batch_size" in actual_context or "cluster_count" in actual_context or "results" in actual_context:
             batch_size = actual_context.get("batch_size") or len(actual_context.get("results", []))
             cluster_count = actual_context.get("cluster_count", 0)

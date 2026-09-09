@@ -27,7 +27,7 @@
         <div class="meter-track">
           <div 
             class="meter-fill" 
-            :style="{ width: `${analysis.risk_score}%`, backgroundColor: verdictColor }"
+            :style="{ width: `${analysis.risk_score}%`, backgroundImage: riskGradient(analysis.risk_score) }"
           ></div>
         </div>
       </div>
@@ -210,6 +210,7 @@ import {
 } from 'lucide-vue-next'
 import { marked } from 'marked'
 import { chatExplain } from '../api/client'
+import { riskGradient } from '../utils/riskGradient'
 import AttachmentIntelligencePanel from './AttachmentIntelligencePanel.vue'
 
 // Configure marked for safe defaults

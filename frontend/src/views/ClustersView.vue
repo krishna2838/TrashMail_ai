@@ -29,6 +29,23 @@
     </div>
 
     <template v-else>
+      <!-- Search bar -->
+      <div class="graph-search-wrap">
+        <SearchIcon :size="16" class="graph-search-icon" />
+        <input
+          v-model="searchQuery"
+          type="text"
+          class="graph-search-input"
+          placeholder="Search subject, sender, domain, IP, UPI, wallet, or hash..."
+        />
+        <span v-if="searchQuery" class="graph-search-count">
+          {{ searchMatchIds.length }} {{ searchMatchIds.length === 1 ? 'match' : 'matches' }}
+        </span>
+        <button v-if="searchQuery" class="graph-search-clear" title="Clear search" @click="searchQuery = ''">
+          <X :size="14" />
+        </button>
+      </div>
+
       <!-- Graph + inspector -->
       <div class="graph-inspector-row">
         <div class="card graph-card">
@@ -115,6 +132,15 @@
               <ExternalLink :size="14" />
               View full report
             </button>
+            <button
+              v-if="selectedEmailCluster"
+              class="btn-secondary view-full-btn"
+              @click="openClusterReport(selectedEmailCluster)"
+              :title="`Open the campaign report for ${selectedEmailCluster.cluster_id}`"
+            >
+              <FileText :size="14" />
+              Open campaign report ({{ selectedEmailCluster.cluster_id }})
+            </button>
           </div>
 
           <div v-else class="inspector-body">
@@ -122,19 +148,63 @@
               <Tag :size="14" />
               <span>{{ prettyType(selectedNode.type) }}</span>
             </div>
-            <div class="inspector-title mono" :title="selectedNode.label">
-              {{ selectedNode.label }}
+            <div class="inspector-title-row">
+              <div class="inspector-title mono" :title="selectedNode.label">
+                {{ selectedNode.label }}
+              </div>
+              <button
+                class="copy-btn"
+                :title="`Copy ${selectedNode.label} to clipboard`"
+                @click="copyToClipboard(selectedNode.label, 'ind-label')"
+              >
+                <Check v-if="copiedKey === 'ind-label'" :size="14" />
+                <Copy v-else :size="14" />
+              </button>
             </div>
             <div class="inspector-fields">
               <div class="field-row">
                 <span class="field-label">Node ID</span>
-                <span class="field-value mono">{{ selectedNode.id }}</span>
+                <span class="field-value mono value-with-copy">
+                  <span class="value-text">{{ selectedNode.id }}</span>
+                  <button
+                    class="copy-btn copy-btn-inline"
+                    :title="`Copy ${selectedNode.id} to clipboard`"
+                    @click="copyToClipboard(selectedNode.id, 'ind-id')"
+                  >
+                    <Check v-if="copiedKey === 'ind-id'" :size="12" />
+                    <Copy v-else :size="12" />
+                  </button>
+                </span>
               </div>
               <div class="field-row">
                 <span class="field-label">Referenced by</span>
                 <span class="field-value">
-                  {{ nodeDegree(selectedNode.id) }} {{ nodeDegree(selectedNode.id) === 1 ? 'email' : 'emails' }}
+                  {{ connectedEmails.length }} {{ connectedEmails.length === 1 ? 'email' : 'emails' }}
                 </span>
+              </div>
+            </div>
+
+            <div v-if="connectedEmails.length > 0" class="connected-emails">
+              <div class="connected-header">Connected Emails</div>
+              <ul class="connected-list">
+                <li
+                  v-for="em in visibleConnectedEmails"
+                  :key="em.id"
+                  class="connected-item"
+                  :class="{ 'connected-item-loading': loadingItem === em.id }"
+                  @click="openReport({ id: em.id })"
+                >
+                  <span :class="['badge', getVerdictBadgeClass(em.verdict)]">
+                    {{ em.verdict || 'Unknown' }}
+                  </span>
+                  <span class="connected-subject" :title="em.subject">
+                    {{ em.subject || '(No Subject)' }}
+                  </span>
+                  <ExternalLink :size="12" class="connected-open-icon" />
+                </li>
+              </ul>
+              <div v-if="hiddenConnectedCount > 0" class="connected-more">
+                +{{ hiddenConnectedCount }} more
               </div>
             </div>
           </div>
@@ -145,7 +215,16 @@
       <div class="clusters-section">
         <div class="clusters-header">
           <h2>Detected Clusters</h2>
-          <span class="clusters-count">{{ clusters.length }} {{ clusters.length === 1 ? 'cluster' : 'clusters' }}</span>
+          <div class="clusters-header-right">
+            <button
+              v-if="activeClusterId"
+              class="show-all-btn"
+              @click="clearActiveCluster"
+            >
+              Show All
+            </button>
+            <span class="clusters-count">{{ clusters.length }} {{ clusters.length === 1 ? 'cluster' : 'clusters' }}</span>
+          </div>
         </div>
 
         <div v-if="clusters.length === 0" class="card empty-card small">
@@ -158,7 +237,8 @@
           <div
             v-for="c in clusters"
             :key="c.cluster_id"
-            class="cluster-card"
+            :class="['cluster-card', activeClusterId === c.cluster_id ? 'cluster-card-active' : '']"
+            @click="toggleCluster(c)"
           >
             <div class="cluster-top">
               <span class="cluster-id">{{ c.cluster_id }}</span>
@@ -179,23 +259,37 @@
                 Max risk {{ c.highest_risk_score }}/100
               </span>
             </div>
+            <button
+              class="cluster-report-btn"
+              @click.stop="openClusterReport(c)"
+            >
+              <FileText :size="12" />
+              View Full Report
+            </button>
           </div>
         </div>
+      </div>
+
+      <!-- Clusters chat assistant -->
+      <div class="chat-section">
+        <ChatPanel :context="chatContext" :context-builder="buildChatContext" />
       </div>
     </template>
   </div>
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, watch, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   Share2, Network, Inbox, Search, Mail, Tag,
-  ExternalLink, Gauge, Maximize2,
+  ExternalLink, Gauge, Maximize2, X, FileText, Copy, Check,
+  Search as SearchIcon,
 } from 'lucide-vue-next'
 import { getGraphOverview, getHistoryItem } from '../api/client'
 import { useAnalysisStore } from '../stores/analysis'
 import { useNetworkGraph } from '../composables/useNetworkGraph'
+import ChatPanel from '../components/ChatPanel.vue'
 
 const router = useRouter()
 const store = useAnalysisStore()
@@ -207,6 +301,75 @@ const loading = ref(true)
 const selectedNode = ref(null)
 const loadingItem = ref(null)
 const networkContainer = ref(null)
+const activeClusterId = ref(null)
+const searchQuery = ref('')
+const copiedKey = ref(null)
+let copyResetTimer = null
+
+async function copyToClipboard(text, key) {
+  if (!text) return
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      await navigator.clipboard.writeText(String(text))
+    } else {
+      // Fallback for older browsers / non-secure contexts
+      const ta = document.createElement('textarea')
+      ta.value = String(text)
+      ta.style.position = 'fixed'
+      ta.style.opacity = '0'
+      document.body.appendChild(ta)
+      ta.select()
+      document.execCommand('copy')
+      document.body.removeChild(ta)
+    }
+    copiedKey.value = key
+    if (copyResetTimer) clearTimeout(copyResetTimer)
+    copyResetTimer = setTimeout(() => { copiedKey.value = null }, 1200)
+  } catch (err) {
+    console.warn('Copy failed', err)
+  }
+}
+
+function matchNodesByText(text) {
+  const q = (text || '').trim().toLowerCase()
+  if (!q) return []
+  const hits = []
+  for (const n of nodes.value) {
+    const label = (n.label || '').toLowerCase()
+    const id = (n.id || '').toLowerCase()
+    const subject = (n.subject || '').toLowerCase()
+    const sender = (n.sender || '').toLowerCase()
+    if (label.includes(q) || id.includes(q) || subject.includes(q) || sender.includes(q)) {
+      hits.push(n)
+    }
+  }
+  return hits
+}
+
+const searchMatchIds = computed(() => matchNodesByText(searchQuery.value).map(n => n.id))
+
+watch(searchQuery, (q) => {
+  const trimmed = (q || '').trim()
+  if (!trimmed) {
+    // Empty search restores full view, overriding any prior cluster selection.
+    activeClusterId.value = null
+    graphCtl.clearHighlight()
+    return
+  }
+  // Search takes precedence over any active cluster selection.
+  activeClusterId.value = null
+  const ids = searchMatchIds.value
+  if (ids.length === 0) {
+    // No matches — dim everything by highlighting an empty-but-truthy set.
+    // Passing a Set with a sentinel that matches nothing yields all-dim.
+    graphCtl.setHighlight(new Set(['__no_matches_sentinel__']))
+    return
+  }
+  graphCtl.setHighlight(new Set(ids))
+  if (ids.length === 1) {
+    graphCtl.focusNode(ids[0])
+  }
+})
 
 const graphCtl = useNetworkGraph({
   height: '540px',
@@ -221,8 +384,112 @@ const graphCtl = useNetworkGraph({
   },
 })
 
+const MAX_MATCHED_NODES = 6
+const MAX_NEIGHBORS_PER_NODE = 8
+
+function neighborsOf(nodeId) {
+  const out = []
+  for (const e of edges.value) {
+    if (e.source === nodeId) out.push({ id: e.target, edgeType: e.type })
+    else if (e.target === nodeId) out.push({ id: e.source, edgeType: e.type })
+  }
+  return out
+}
+
+function buildRelevantNode(node) {
+  const neighborIds = neighborsOf(node.id)
+  if (node.type === 'email') {
+    const indicators = []
+    for (const { id } of neighborIds) {
+      const other = nodes.value.find(n => n.id === id)
+      if (!other || other.type === 'email') continue
+      indicators.push({ type: other.type, value: other.label || other.id })
+      if (indicators.length >= MAX_NEIGHBORS_PER_NODE) break
+    }
+    return {
+      node_kind: 'email',
+      id: node.id,
+      subject: node.subject || node.label || '(No Subject)',
+      sender: node.sender || null,
+      verdict: node.verdict || null,
+      risk_score: node.risk_score ?? null,
+      connected_indicators: indicators,
+    }
+  }
+  const emails = []
+  for (const { id } of neighborIds) {
+    const other = nodes.value.find(n => n.id === id)
+    if (!other || other.type !== 'email') continue
+    emails.push({
+      subject: other.subject || other.label || '(No Subject)',
+      verdict: other.verdict || null,
+    })
+    if (emails.length >= MAX_NEIGHBORS_PER_NODE) break
+  }
+  return {
+    node_kind: 'indicator',
+    type: node.type,
+    value: node.label || node.id,
+    connected_emails: emails,
+    connected_email_count: neighborIds.filter(({ id }) => {
+      const o = nodes.value.find(n => n.id === id)
+      return o && o.type === 'email'
+    }).length,
+  }
+}
+
+function buildChatContext(message) {
+  const base = chatContext.value ? { ...chatContext.value } : null
+  if (!base) return null
+  const matches = matchNodesByText(message).slice(0, MAX_MATCHED_NODES)
+  if (matches.length === 0) return base
+  base.relevant_nodes = matches.map(buildRelevantNode)
+  return base
+}
+
+const chatContext = computed(() => {
+  if (!clusters.value.length && !nodes.value.length) return null
+  return {
+    total_emails: nodes.value.filter(n => n.type === 'email').length,
+    total_clusters: clusters.value.length,
+    top_clusters: clusters.value.slice(0, 5).map(c => ({
+      cluster_id: c.cluster_id,
+      representative_subject: c.representative_subject,
+      email_count: c.email_count,
+      highest_risk_score: c.highest_risk_score,
+    })),
+  }
+})
+
 const emailNodeCount = computed(() => nodes.value.filter(n => n.type === 'email').length)
 const indicatorNodeCount = computed(() => nodes.value.length - emailNodeCount.value)
+
+const CONNECTED_EMAILS_VISIBLE = 10
+
+const connectedEmails = computed(() => {
+  const sel = selectedNode.value
+  if (!sel || sel.type === 'email') return []
+  const out = []
+  for (const e of edges.value) {
+    if (e.source !== sel.id && e.target !== sel.id) continue
+    const otherId = e.source === sel.id ? e.target : e.source
+    const other = nodes.value.find(n => n.id === otherId)
+    if (!other || other.type !== 'email') continue
+    if (out.some(x => x.id === other.id)) continue
+    out.push({
+      id: other.id,
+      subject: other.subject || other.label || '(No Subject)',
+      verdict: other.verdict,
+      risk_score: other.risk_score,
+    })
+  }
+  // Highest risk first, then subject alphabetical
+  out.sort((a, b) => (b.risk_score || 0) - (a.risk_score || 0) || String(a.subject).localeCompare(String(b.subject)))
+  return out
+})
+
+const visibleConnectedEmails = computed(() => connectedEmails.value.slice(0, CONNECTED_EMAILS_VISIBLE))
+const hiddenConnectedCount = computed(() => Math.max(0, connectedEmails.value.length - CONNECTED_EMAILS_VISIBLE))
 
 function nodeDegree(id) {
   let count = 0
@@ -278,6 +545,46 @@ function tierClass(score) {
   if (s >= 70) return 'tier-phish'
   if (s >= 35) return 'tier-suspicious'
   return 'tier-safe'
+}
+
+const selectedEmailCluster = computed(() => {
+  const sel = selectedNode.value
+  if (!sel || sel.type !== 'email') return null
+  return clusters.value.find(c => (c.member_email_ids || []).includes(sel.id)) || null
+})
+
+function openClusterReport(cluster) {
+  if (!cluster || !cluster.member_email_ids || cluster.member_email_ids.length === 0) return
+  router.push({
+    path: '/reports',
+    query: { ids: cluster.member_email_ids.join(',') },
+  })
+}
+
+function clusterNodeIdSet(cluster) {
+  const emailIds = new Set(cluster.member_email_ids || [])
+  const set = new Set(emailIds)
+  for (const e of edges.value) {
+    if (emailIds.has(e.source)) set.add(e.target)
+    else if (emailIds.has(e.target)) set.add(e.source)
+  }
+  return set
+}
+
+function toggleCluster(cluster) {
+  // Cluster interaction takes precedence over any active search.
+  searchQuery.value = ''
+  if (activeClusterId.value === cluster.cluster_id) {
+    clearActiveCluster()
+    return
+  }
+  activeClusterId.value = cluster.cluster_id
+  graphCtl.setHighlight(clusterNodeIdSet(cluster))
+}
+
+function clearActiveCluster() {
+  activeClusterId.value = null
+  graphCtl.clearHighlight()
 }
 
 async function openReport(node) {
@@ -363,6 +670,62 @@ onMounted(loadOverview)
   gap: 12px;
   padding: 40px;
   color: var(--text-muted);
+}
+
+/* Search bar */
+.graph-search-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  background: var(--bg-card);
+  border: 1px solid var(--border-light);
+  border-radius: 10px;
+  padding: 0 12px 0 36px;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.graph-search-wrap:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-light);
+}
+
+.graph-search-icon {
+  position: absolute;
+  left: 12px;
+  color: var(--text-muted);
+}
+
+.graph-search-input {
+  flex: 1;
+  border: none;
+  outline: none;
+  padding: 12px 0;
+  font-size: 0.92rem;
+  background: transparent;
+  color: var(--text-main);
+}
+
+.graph-search-count {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  padding: 0 8px;
+  white-space: nowrap;
+}
+
+.graph-search-clear {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+}
+
+.graph-search-clear:hover {
+  background: var(--bg-page);
+  color: var(--text-main);
 }
 
 /* Graph + inspector layout */
@@ -570,6 +933,121 @@ onMounted(loadOverview)
   font-size: 0.88rem;
 }
 
+.inspector-title-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.value-with-copy {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  overflow: hidden;
+}
+
+.value-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 220px;
+}
+
+.copy-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border-light);
+  background: var(--bg-card);
+  color: var(--text-muted);
+  border-radius: 6px;
+  width: 28px;
+  height: 28px;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.copy-btn:hover {
+  background: var(--accent-light);
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.copy-btn-inline {
+  width: 22px;
+  height: 22px;
+  border: none;
+  background: transparent;
+}
+
+.copy-btn-inline:hover {
+  background: var(--accent-light);
+  color: var(--accent);
+}
+
+.connected-emails {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.connected-header {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+
+.connected-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.connected-item {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.85rem;
+  color: var(--text-main);
+  transition: background-color 0.12s ease;
+}
+
+.connected-item:hover {
+  background: var(--bg-page);
+}
+
+.connected-item-loading {
+  opacity: 0.6;
+  cursor: progress;
+}
+
+.connected-subject {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.connected-open-icon {
+  color: var(--text-muted);
+}
+
+.connected-more {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  padding: 4px 8px;
+}
+
 .mono {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
@@ -612,12 +1090,45 @@ onMounted(loadOverview)
   display: flex;
   flex-direction: column;
   gap: 8px;
-  transition: box-shadow 0.15s ease, border-color 0.15s ease;
+  transition: box-shadow 0.18s ease, border-color 0.15s ease, transform 0.18s ease;
+}
+
+.cluster-card {
+  cursor: pointer;
 }
 
 .cluster-card:hover {
   border-color: var(--accent-light);
-  box-shadow: 0 2px 6px rgba(29, 78, 216, 0.08);
+  box-shadow: 0 6px 14px rgba(15, 23, 42, 0.08), 0 2px 4px rgba(29, 78, 216, 0.06);
+  transform: translateY(-2px);
+}
+
+.cluster-card-active {
+  border-color: var(--accent) !important;
+  background: var(--accent-light);
+  box-shadow: 0 2px 8px rgba(29, 78, 216, 0.15);
+}
+
+.clusters-header-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.show-all-btn {
+  background: var(--bg-card);
+  border: 1px solid var(--accent);
+  color: var(--accent);
+  border-radius: 8px;
+  padding: 5px 12px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.show-all-btn:hover {
+  background: var(--accent-light);
 }
 
 .cluster-top {
@@ -684,6 +1195,31 @@ onMounted(loadOverview)
   gap: 4px;
 }
 
+.cluster-report-btn {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 4px;
+  padding: 5px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--accent);
+  background: var(--bg-card);
+  color: var(--accent);
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+.cluster-report-btn:hover {
+  background: var(--accent-light);
+}
+
+.cluster-card-active .cluster-report-btn {
+  background: var(--bg-card);
+}
+
 /* Empty state */
 .empty-card {
   display: flex;
@@ -716,5 +1252,9 @@ onMounted(loadOverview)
 
 .start-btn {
   margin-top: 12px;
+}
+
+.chat-section {
+  margin-top: 4px;
 }
 </style>
