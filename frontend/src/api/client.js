@@ -39,8 +39,27 @@ export async function getGraph(emailHash, depth = 2) {
   return response.data
 }
 
+export async function getClusterReport(emailIds) {
+  const response = await api.get('/api/graph/report', {
+    params: { ids: (emailIds || []).join(',') },
+  })
+  return response.data
+}
+
+export async function getGraphOverview(limit = 100) {
+  const response = await api.get('/api/graph/overview', { params: { limit } })
+  return response.data
+}
+
 export async function getRelatedEmails(emailHash) {
   const response = await api.get(`/api/graph/${emailHash}/related`)
+  return response.data
+}
+
+export async function getAttachmentIntelligence(emailHashes) {
+  const response = await api.get('/api/graph/attachments', {
+    params: { hashes: emailHashes.join(',') }
+  })
   return response.data
 }
 

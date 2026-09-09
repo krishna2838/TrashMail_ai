@@ -158,6 +158,11 @@
       </div>
     </div>
 
+    <!-- Attachment Intelligence (Technical: hidden when hideTechnical is true) -->
+    <AttachmentIntelligencePanel
+      v-if="!hideTechnical && hasAttachments"
+      :emailHashes="emailHashList"
+    />
     <!-- Explain Findings Button & Inline Expandable Panel (Simple: hidden in onlyTechnical mode) -->
     <div v-if="!onlyTechnical" class="explain-section">
       <button 
@@ -205,6 +210,7 @@ import {
 } from 'lucide-vue-next'
 import { marked } from 'marked'
 import { chatExplain } from '../api/client'
+import AttachmentIntelligencePanel from './AttachmentIntelligencePanel.vue'
 
 // Configure marked for safe defaults
 marked.setOptions({
@@ -235,6 +241,17 @@ const isPhrasesExpanded = ref(true)
 
 const hasTopPhrases = computed(() => {
   return Boolean(props.analysis?.top_phrases && props.analysis.top_phrases.length > 0)
+})
+
+const hasAttachments = computed(() => {
+  return Boolean(props.analysis?.attachment_hashes && props.analysis.attachment_hashes.length > 0)
+})
+
+const emailHashList = computed(() => {
+  const selfHash = props.analysis?.email_hash
+  if (!selfHash) return []
+  const related = (props.analysis?.campaign?.related_emails || []).map(r => r.id)
+  return [selfHash, ...related].filter(Boolean)
 })
 
 const isPhishingLeaning = computed(() => {

@@ -122,8 +122,19 @@ def save_analysis(analysis: dict[str, Any]) -> None:
                 )
                 params["wallet_addresses"] = list(wallet_addresses)
 
-            # Handle attachment hashes (Phase 9 - additive)
-            if attachment_hashes:
+            # Handle attachment hashes with filenames (Phase 17 - stores filename on relationship)
+            attachment_details = analysis.get("attachment_hash_details", [])
+            if attachment_details:
+                cypher_parts.append(
+                    "WITH DISTINCT e "
+                    "UNWIND $attachment_details AS att "
+                    "MERGE (a:AttachmentHash {hash: att.hash}) "
+                    "MERGE (e)-[c:CONTAINS]->(a) "
+                    "SET c.filename = att.filename"
+                )
+                params["attachment_details"] = list(attachment_details)
+            elif attachment_hashes:
+                # Backward compat: bare hash list without filenames
                 cypher_parts.append(
                     "WITH DISTINCT e "
                     "UNWIND $attachment_hashes AS att_hash "
@@ -156,15 +167,28 @@ def save_analysis(analysis: dict[str, Any]) -> None:
         )
 
 
+def _correlation_strength(indicator_count: int) -> str:
+    """Map indicator count to a human-readable correlation strength label."""
+    if indicator_count >= 3:
+        return "strong"
+    if indicator_count == 2:
+        return "moderate"
+    return "weak"
+
+
 def find_related_emails(email_hash: str) -> dict[str, Any]:
-    """Find other emails connected via a shared IP, Domain, UPI, Wallet, or Hash node (2-hop pattern).
+    """Find other emails connected via shared IP, Domain, UPI, Wallet, or Hash nodes (2-hop).
+
+    Collects ALL shared indicators per related email, not just the first match.
 
     Returns:
         {
             "related_emails": [
                 {"id": str, "subject": str, "verdict": str,
-                 "shared_via": "ip"|"domain"|"upi"|"wallet"|"attachment_hash"|"template_hash",
-                 "shared_value": str},
+                 "shared_via": str,        # backward compat — first indicator type
+                 "shared_value": str,       # backward compat — first indicator value
+                 "shared_indicators": [{"type": str, "value": str}, ...],
+                 "correlation_strength": "weak"|"moderate"|"strong"},
                 ...
             ],
             "campaign_size": int
@@ -177,12 +201,9 @@ def find_related_emails(email_hash: str) -> dict[str, Any]:
         with driver.session() as session:
             result = session.run(
                 """
-                MATCH (e1:Email {id: $id})-[r1]-(shared)-[r2]-(e2:Email)
+                MATCH (e1:Email {id: $id})-[]-(shared)-[]-(e2:Email)
                 WHERE e1 <> e2
-                RETURN DISTINCT
-                    e2.id AS id,
-                    e2.subject AS subject,
-                    e2.verdict AS verdict,
+                WITH e2, shared,
                     CASE
                         WHEN 'IP' IN labels(shared) THEN 'ip'
                         WHEN 'Domain' IN labels(shared) THEN 'domain'
@@ -191,7 +212,7 @@ def find_related_emails(email_hash: str) -> dict[str, Any]:
                         WHEN 'AttachmentHash' IN labels(shared) THEN 'attachment_hash'
                         WHEN 'TemplateHash' IN labels(shared) THEN 'template_hash'
                         ELSE 'unknown'
-                    END AS shared_via,
+                    END AS indicator_type,
                     CASE
                         WHEN 'IP' IN labels(shared) THEN shared.address
                         WHEN 'Domain' IN labels(shared) THEN shared.name
@@ -200,23 +221,39 @@ def find_related_emails(email_hash: str) -> dict[str, Any]:
                         WHEN 'AttachmentHash' IN labels(shared) THEN shared.hash
                         WHEN 'TemplateHash' IN labels(shared) THEN shared.hash
                         ELSE ''
-                    END AS shared_value
+                    END AS indicator_value
+                WITH e2,
+                     COLLECT(DISTINCT {type: indicator_type, value: indicator_value}) AS indicators
+                RETURN
+                    e2.id AS id,
+                    e2.subject AS subject,
+                    e2.verdict AS verdict,
+                    indicators AS shared_indicators
                 """,
                 id=email_hash,
             )
             related = []
-            seen_ids: set[str] = set()
             for record in result:
-                eid = record["id"]
-                if eid not in seen_ids:
-                    related.append({
-                        "id": eid,
-                        "subject": record["subject"],
-                        "verdict": record["verdict"],
-                        "shared_via": record["shared_via"],
-                        "shared_value": record["shared_value"],
-                    })
-                    seen_ids.add(eid)
+                indicators = record["shared_indicators"] or []
+                # Deduplicate (safety net in case COLLECT DISTINCT misses edge cases)
+                seen_pairs: set[tuple[str, str]] = set()
+                deduped: list[dict[str, str]] = []
+                for ind in indicators:
+                    pair = (ind["type"], ind["value"])
+                    if pair not in seen_pairs:
+                        deduped.append({"type": ind["type"], "value": ind["value"]})
+                        seen_pairs.add(pair)
+
+                first = deduped[0] if deduped else {"type": "unknown", "value": ""}
+                related.append({
+                    "id": record["id"],
+                    "subject": record["subject"],
+                    "verdict": record["verdict"],
+                    "shared_via": first["type"],
+                    "shared_value": first["value"],
+                    "shared_indicators": deduped,
+                    "correlation_strength": _correlation_strength(len(deduped)),
+                })
 
         return {
             "related_emails": related,
@@ -233,6 +270,95 @@ def find_related_emails(email_hash: str) -> dict[str, Any]:
             "Unexpected error querying related emails: %s", str(exc)
         )
         return empty_result
+
+
+def _shape_node_from_labels(eid: str, labels: list[str], props: dict[str, Any]) -> dict[str, Any] | None:
+    """Shape a Neo4j node record into the frontend graph-node schema.
+
+    Returns None for label sets that don't match any known type — the caller
+    should skip those rows.
+    """
+    if "Email" in labels:
+        analyzed_at = props.get("analyzed_at")
+        if analyzed_at is not None and hasattr(analyzed_at, "isoformat"):
+            analyzed_at = analyzed_at.isoformat()
+        elif analyzed_at is not None:
+            analyzed_at = str(analyzed_at)
+        return {
+            "id": props.get("id", eid),
+            "label": props.get("subject", "Email"),
+            "type": "email",
+            "verdict": props.get("verdict"),
+            "risk_score": props.get("risk_score"),
+            "subject": props.get("subject"),
+            "sender": props.get("sender"),
+            "analyzed_at": analyzed_at,
+        }
+    if "IP" in labels:
+        addr = props.get("address", eid)
+        return {"id": addr, "label": addr, "type": "ip", "verdict": None}
+    if "Domain" in labels:
+        name = props.get("name", eid)
+        return {"id": name, "label": name, "type": "domain", "verdict": None}
+    if "UPI" in labels:
+        upi_id = props.get("id", eid)
+        return {"id": upi_id, "label": f"UPI: {upi_id}", "type": "upi", "verdict": None}
+    if "Wallet" in labels:
+        addr = props.get("address", eid)
+        short_addr = f"{addr[:6]}...{addr[-4:]}" if len(addr) > 12 else addr
+        return {"id": addr, "label": f"Wallet: {short_addr}", "type": "wallet", "verdict": None}
+    if "AttachmentHash" in labels:
+        h = props.get("hash", eid)
+        return {
+            "id": h,
+            "label": f"File: {h[:8]}..." if len(h) > 8 else h,
+            "type": "attachment_hash",
+            "verdict": None,
+        }
+    if "TemplateHash" in labels:
+        h = props.get("hash", eid)
+        return {
+            "id": h,
+            "label": f"Tmpl: {h[:8]}..." if len(h) > 8 else h,
+            "type": "template_hash",
+            "verdict": None,
+        }
+    return None
+
+
+def _shape_graph_from_records(records) -> dict[str, Any]:
+    """Convert Neo4j records with (eid, labels, props, rel_start, rel_end, rel_type)
+    into the {nodes, edges} shape the frontend expects.
+    """
+    nodes_map: dict[str, dict[str, Any]] = {}
+    edges_set: set[tuple[str, str, str]] = set()
+
+    for record in records:
+        eid = record["eid"]
+        labels = record["node_labels"]
+        props = record["node_props"]
+
+        if eid not in nodes_map:
+            shaped = _shape_node_from_labels(eid, labels, props)
+            if shaped is None:
+                continue
+            nodes_map[eid] = shaped
+
+        rel_start = record.get("rel_start_eid")
+        rel_end = record.get("rel_end_eid")
+        rel_type = record.get("rel_type")
+        if rel_start and rel_end and rel_type:
+            edges_set.add((rel_start, rel_end, rel_type))
+
+    eid_to_id = {eid: node["id"] for eid, node in nodes_map.items()}
+    edges = []
+    for start_eid, end_eid, rel_type in edges_set:
+        source = eid_to_id.get(start_eid)
+        target = eid_to_id.get(end_eid)
+        if source and target:
+            edges.append({"source": source, "target": target, "type": rel_type})
+
+    return {"nodes": list(nodes_map.values()), "edges": edges}
 
 
 def get_graph_for_visualization(
@@ -287,89 +413,7 @@ def get_graph_for_visualization(
                 hashes=target_hashes,
             )
 
-            nodes_map: dict[str, dict[str, Any]] = {}
-            edges_set: set[tuple[str, str, str]] = set()
-
-            for record in result:
-                # Process node
-                eid = record["eid"]
-                labels = record["node_labels"]
-                props = record["node_props"]
-
-                if eid not in nodes_map:
-                    if "Email" in labels:
-                        node_id = props.get("id", eid)
-                        node_label = props.get("subject", "Email")
-                        node_type = "email"
-                        node_verdict = props.get("verdict")
-                    elif "IP" in labels:
-                        node_id = props.get("address", eid)
-                        node_label = props.get("address", "IP")
-                        node_type = "ip"
-                        node_verdict = None
-                    elif "Domain" in labels:
-                        node_id = props.get("name", eid)
-                        node_label = props.get("name", "Domain")
-                        node_type = "domain"
-                        node_verdict = None
-                    elif "UPI" in labels:
-                        node_id = props.get("id", eid)
-                        node_label = f"UPI: {props.get('id', 'UPI')}"
-                        node_type = "upi"
-                        node_verdict = None
-                    elif "Wallet" in labels:
-                        addr = props.get("address", eid)
-                        node_id = addr
-                        short_addr = f"{addr[:6]}...{addr[-4:]}" if len(addr) > 12 else addr
-                        node_label = f"Wallet: {short_addr}"
-                        node_type = "wallet"
-                        node_verdict = None
-                    elif "AttachmentHash" in labels:
-                        h = props.get("hash", eid)
-                        node_id = h
-                        node_label = f"File: {h[:8]}..." if len(h) > 8 else h
-                        node_type = "attachment_hash"
-                        node_verdict = None
-                    elif "TemplateHash" in labels:
-                        h = props.get("hash", eid)
-                        node_id = h
-                        node_label = f"Tmpl: {h[:8]}..." if len(h) > 8 else h
-                        node_type = "template_hash"
-                        node_verdict = None
-                    else:
-                        continue
-
-                    nodes_map[eid] = {
-                        "id": node_id,
-                        "label": node_label,
-                        "type": node_type,
-                        "verdict": node_verdict,
-                    }
-
-                # Process relationship
-                rel_start = record.get("rel_start_eid")
-                rel_end = record.get("rel_end_eid")
-                rel_type = record.get("rel_type")
-                if rel_start and rel_end and rel_type:
-                    edges_set.add((rel_start, rel_end, rel_type))
-
-            # Convert edges from elementId references to our node ids
-            eid_to_id = {eid: node["id"] for eid, node in nodes_map.items()}
-            edges = []
-            for start_eid, end_eid, rel_type in edges_set:
-                source = eid_to_id.get(start_eid)
-                target = eid_to_id.get(end_eid)
-                if source and target:
-                    edges.append({
-                        "source": source,
-                        "target": target,
-                        "type": rel_type,
-                    })
-
-            return {
-                "nodes": list(nodes_map.values()),
-                "edges": edges,
-            }
+            return _shape_graph_from_records(result)
 
     except (ServiceUnavailable, OSError, AuthError) as exc:
         logger.warning(
@@ -379,5 +423,206 @@ def get_graph_for_visualization(
     except Exception as exc:
         logger.warning(
             "Unexpected error building visualization graph: %s", str(exc)
+        )
+        return empty_result
+
+
+def get_full_graph(limit: int = 100) -> dict[str, Any]:
+    """Return the graph of the `limit` most recently analyzed emails and their indicators.
+
+    Uses the same node/edge shaping as `get_graph_for_visualization`; ordering by
+    `analyzed_at` matches `list_investigations()` for cross-view consistency.
+    """
+    empty_result: dict[str, Any] = {"nodes": [], "edges": []}
+    safe_limit = max(1, min(int(limit or 100), 500))
+
+    try:
+        driver = get_driver()
+        with driver.session() as session:
+            result = session.run(
+                """
+                MATCH (root:Email)
+                WITH root
+                ORDER BY root.analyzed_at DESC
+                LIMIT $limit
+                OPTIONAL MATCH path = (root)-[*1..2]-(connected)
+                UNWIND (CASE WHEN path IS NULL THEN [root] ELSE nodes(path) END) AS n
+                UNWIND (CASE WHEN path IS NULL THEN [null] ELSE relationships(path) END) AS r
+                RETURN DISTINCT
+                    elementId(n) AS eid,
+                    labels(n) AS node_labels,
+                    properties(n) AS node_props,
+                    elementId(startNode(r)) AS rel_start_eid,
+                    elementId(endNode(r)) AS rel_end_eid,
+                    type(r) AS rel_type
+                """,
+                limit=safe_limit,
+            )
+            return _shape_graph_from_records(result)
+
+    except (ServiceUnavailable, OSError, AuthError) as exc:
+        logger.warning("Neo4j unavailable — cannot build full graph: %s", str(exc))
+        return empty_result
+    except Exception as exc:
+        logger.warning("Unexpected error building full graph: %s", str(exc))
+        return empty_result
+
+
+def compute_clusters(nodes: list[dict[str, Any]], edges: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Find connected components in the {nodes, edges} graph and summarize
+    those containing 2+ Email nodes.
+
+    Pure in-memory union-find over the given edge list — no Neo4j or GDS
+    dependency. Component ordering is deterministic: by descending
+    highest_risk_score, then by member email count, then by cluster_id.
+    """
+    if not nodes:
+        return []
+
+    parent: dict[str, str] = {n["id"]: n["id"] for n in nodes}
+
+    def find(x: str) -> str:
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+
+    def union(a: str, b: str) -> None:
+        ra, rb = find(a), find(b)
+        if ra != rb:
+            parent[ra] = rb
+
+    for e in edges or []:
+        s = e.get("source")
+        t = e.get("target")
+        if s in parent and t in parent:
+            union(s, t)
+
+    # Group node dicts by component root
+    components: dict[str, list[dict[str, Any]]] = {}
+    for n in nodes:
+        root = find(n["id"])
+        components.setdefault(root, []).append(n)
+
+    clusters: list[dict[str, Any]] = []
+    for comp_nodes in components.values():
+        emails = [n for n in comp_nodes if n.get("type") == "email"]
+        if len(emails) < 2:
+            continue
+
+        def _risk(n: dict[str, Any]) -> int:
+            try:
+                return int(n.get("risk_score") or 0)
+            except (TypeError, ValueError):
+                return 0
+
+        top = max(emails, key=_risk)
+        clusters.append({
+            "email_count": len(emails),
+            "highest_risk_score": _risk(top),
+            "representative_subject": top.get("subject") or top.get("label") or "(No Subject)",
+            "member_email_ids": [n["id"] for n in emails],
+        })
+
+    clusters.sort(
+        key=lambda c: (-c["highest_risk_score"], -c["email_count"], c["representative_subject"])
+    )
+    for idx, cluster in enumerate(clusters, start=1):
+        cluster["cluster_id"] = f"CLU-{idx:02d}"
+
+    # Move cluster_id to the front for readability in JSON payloads
+    return [
+        {
+            "cluster_id": c["cluster_id"],
+            "email_count": c["email_count"],
+            "highest_risk_score": c["highest_risk_score"],
+            "representative_subject": c["representative_subject"],
+            "member_email_ids": c["member_email_ids"],
+        }
+        for c in clusters
+    ]
+
+
+def get_attachment_intelligence(email_hashes: list[str]) -> dict[str, Any]:
+    """Query Neo4j for attachment reuse across a set of analyzed emails.
+
+    Returns reused attachments (seen in 2+ emails) with distinct filenames per hash,
+    plus aggregate counts: total instances, unique hashes, and reused hashes.
+
+    Returns:
+        {
+            "reused_attachments": [
+                {
+                    "hash": str,
+                    "filenames": [str, ...],
+                    "seen_in_count": int,
+                    "emails": [{"id": str, "subject": str, "verdict": str}, ...]
+                },
+                ...
+            ],
+            "total_attachments": int,
+            "total_unique_attachments": int,
+            "total_reused": int,
+        }
+    """
+    empty_result: dict[str, Any] = {
+        "reused_attachments": [],
+        "total_attachments": 0,
+        "total_unique_attachments": 0,
+        "total_reused": 0,
+    }
+
+    if not email_hashes:
+        return empty_result
+
+    try:
+        driver = get_driver()
+        with driver.session() as session:
+            result = session.run(
+                """
+                MATCH (e:Email)-[c:CONTAINS]->(a:AttachmentHash)
+                WHERE e.id IN $hashes
+                WITH a.hash AS hash,
+                     COLLECT(DISTINCT e) AS emails,
+                     COLLECT(DISTINCT c.filename) AS raw_filenames
+                RETURN hash,
+                       [em IN emails | {id: em.id, subject: em.subject, verdict: em.verdict}] AS email_list,
+                       SIZE(emails) AS seen_in_count,
+                       [fn IN raw_filenames WHERE fn IS NOT NULL AND fn <> ''] AS filenames
+                ORDER BY seen_in_count DESC
+                """,
+                hashes=email_hashes,
+            )
+
+            all_attachments: list[dict[str, Any]] = []
+            total_instances = 0
+
+            for record in result:
+                seen_count = record["seen_in_count"]
+                total_instances += seen_count
+                all_attachments.append({
+                    "hash": record["hash"],
+                    "filenames": record["filenames"] or [],
+                    "seen_in_count": seen_count,
+                    "emails": record["email_list"] or [],
+                })
+
+            reused = [a for a in all_attachments if a["seen_in_count"] >= 2]
+
+            return {
+                "reused_attachments": reused,
+                "total_attachments": total_instances,
+                "total_unique_attachments": len(all_attachments),
+                "total_reused": len(reused),
+            }
+
+    except (ServiceUnavailable, OSError, AuthError) as exc:
+        logger.warning(
+            "Neo4j unavailable — cannot query attachment intelligence: %s", str(exc)
+        )
+        return empty_result
+    except Exception as exc:
+        logger.warning(
+            "Unexpected error querying attachment intelligence: %s", str(exc)
         )
         return empty_result

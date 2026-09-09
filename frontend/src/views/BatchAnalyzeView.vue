@@ -194,6 +194,11 @@
         />
       </div>
 
+      <!-- Attachment Intelligence Panel (Phase 17 Part D) -->
+      <div v-if="batchEmailHashes.length > 0" class="batch-attachment-section">
+        <AttachmentIntelligencePanel :email-hashes="batchEmailHashes" />
+      </div>
+
       <!-- Batch Chat Assistant (Part C) -->
       <div class="batch-chat-section">
         <ChatPanel :context="batchChatContext" />
@@ -220,6 +225,7 @@ import {
 import { analyzeBatch } from '../api/client'
 import { useAnalysisStore } from '../stores/analysis'
 import NetworkGraphPanel from '../components/NetworkGraphPanel.vue'
+import AttachmentIntelligencePanel from '../components/AttachmentIntelligencePanel.vue'
 import ChatPanel from '../components/ChatPanel.vue'
 
 const router = useRouter()
@@ -234,6 +240,10 @@ const errorMessage = ref(null)
 const batchResult = computed({
   get: () => store.currentBatchResult,
   set: (val) => store.setBatchResult(val),
+})
+
+const batchEmailHashes = computed(() => {
+  return (batchResult.value?.results || []).map(r => r.email_hash).filter(Boolean)
 })
 
 function triggerFileInput() {
@@ -264,6 +274,8 @@ function addFiles(files) {
 }
 
 function loadDemoBatch() {
+  const sharedPdfPayload = 'JVBERi0xLjQKJcfsj6IKMSAwIG9iago8PAovVHlwZSAvQ2F0YWxvZwovUGFnZXMgMiAwIFIKPj4KZW5kb2JqCg=='
+
   const sample1 = `Received: from relay2.targetmail.com (relay2.targetmail.com [10.0.0.15])
         by mx.targetmail.com with ESMTP id z991823;
         Mon, 31 Aug 2026 01:10:05 +0000
@@ -282,6 +294,9 @@ Message-ID: <attack.99281.2026@attacker-infra.org>
 Reply-To: "Scammer Direct" <dropbox123@gmail.com>
 Return-Path: <spoof@compromised-vps.net>
 MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="====BOUNDARY_DEMO_1===="
+
+--====BOUNDARY_DEMO_1====
 Content-Type: text/plain; charset="utf-8"
 
 Dear PayPal Customer,
@@ -290,26 +305,37 @@ Please immediately verify your identity by clicking below:
 https://paypa1-security-verify.com/login?token=abc891723
 
 Failure to do so will result in permanent suspension.
+
+--====BOUNDARY_DEMO_1====
+Content-Type: application/pdf; name="security_patch_update.pdf"
+Content-Disposition: attachment; filename="security_patch_update.pdf"
+Content-Transfer-Encoding: base64
+
+${sharedPdfPayload}
+--====BOUNDARY_DEMO_1====--
 `
 
   const sample2 = `Received: from relay3.victimmail.com (relay3.victimmail.com [10.0.0.20])
         by mx.victimmail.com with ESMTP id a112345;
         Mon, 31 Aug 2026 03:22:15 +0000
-Received: from mail.phish-server.ru (mail.phish-server.ru [91.195.240.12])
+Received: from mail.attacker-infra.org (mail.attacker-infra.org [185.220.101.5])
         by relay3.victimmail.com with ESMTP id b223456;
         Mon, 31 Aug 2026 03:21:50 +0000
 Authentication-Results: mx.victimmail.com;
-       spf=fail (victimmail.com: domain of noreply@fake-paypal-support.com does not designate 91.195.240.12 as permitted sender);
+       spf=fail (victimmail.com: domain of noreply@fake-paypal-support.com does not designate 185.220.101.5 as permitted sender);
        dkim=fail header.i=@fake-paypal-support.com;
        dmarc=fail (p=REJECT) header.from=fake-paypal-support.com
 From: "PayPal Alerts" <noreply@fake-paypal-support.com>
 To: "Another Victim" <victim2@victimmail.com>
 Subject: Action Required: Verify your PayPal identity now!
 Date: Mon, 31 Aug 2026 03:21:30 +0000
-Message-ID: <campaign.55512.2026@phish-server.ru>
+Message-ID: <campaign.55512.2026@attacker-infra.org>
 Reply-To: "Support Desk" <phish-collect@gmail.com>
-Return-Path: <bounce@phish-server.ru>
+Return-Path: <bounce@attacker-infra.org>
 MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="====BOUNDARY_DEMO_2===="
+
+--====BOUNDARY_DEMO_2====
 Content-Type: text/plain; charset="utf-8"
 
 Dear PayPal user,
@@ -323,6 +349,14 @@ If you do not verify within 24 hours, your account will be permanently closed.
 
 Regards,
 PayPal Security Team
+
+--====BOUNDARY_DEMO_2====
+Content-Type: application/pdf; name="paypal_identity_form.pdf"
+Content-Disposition: attachment; filename="paypal_identity_form.pdf"
+Content-Transfer-Encoding: base64
+
+${sharedPdfPayload}
+--====BOUNDARY_DEMO_2====--
 `
 
   const sample3 = `Received: from mail-pj1-f41.acme-corp.com (mail-pj1-f41.acme-corp.com [209.85.216.41])
@@ -954,5 +988,9 @@ function getVerdictColor(verdict) {
 
 .combined-graph-section {
   margin-top: 8px;
+}
+
+.batch-attachment-section {
+  margin-top: 16px;
 }
 </style>

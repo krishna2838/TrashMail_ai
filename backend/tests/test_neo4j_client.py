@@ -5,10 +5,92 @@ from __future__ import annotations
 from unittest.mock import MagicMock, patch
 
 from app.graph.neo4j_client import (
+    compute_clusters,
     find_related_emails,
     get_graph_for_visualization,
     save_analysis,
 )
+
+
+# ── compute_clusters tests ──────────────────────────────────────────────
+
+
+def test_compute_clusters_no_shared_indicators():
+    """Two emails with no connecting edges — no clusters returned."""
+    nodes = [
+        {"id": "e1", "type": "email", "risk_score": 80, "subject": "s1"},
+        {"id": "e2", "type": "email", "risk_score": 40, "subject": "s2"},
+    ]
+    assert compute_clusters(nodes, []) == []
+
+
+def test_compute_clusters_single_pair_via_shared_ip():
+    nodes = [
+        {"id": "e1", "type": "email", "risk_score": 88, "subject": "Bank"},
+        {"id": "e2", "type": "email", "risk_score": 55, "subject": "KYC"},
+        {"id": "1.2.3.4", "type": "ip"},
+        {"id": "e3", "type": "email", "risk_score": 10, "subject": "Lonely"},
+    ]
+    edges = [
+        {"source": "e1", "target": "1.2.3.4", "type": "ORIGINATED_FROM"},
+        {"source": "e2", "target": "1.2.3.4", "type": "ORIGINATED_FROM"},
+    ]
+    clusters = compute_clusters(nodes, edges)
+    assert len(clusters) == 1
+    c = clusters[0]
+    assert c["cluster_id"] == "CLU-01"
+    assert c["email_count"] == 2
+    assert c["highest_risk_score"] == 88
+    assert c["representative_subject"] == "Bank"
+    assert set(c["member_email_ids"]) == {"e1", "e2"}
+
+
+def test_compute_clusters_three_emails_transitively_linked():
+    """e1–D1, e2–D1, e2–D2, e3–D2 → all three emails in one component (transitive)."""
+    nodes = [
+        {"id": "e1", "type": "email", "risk_score": 60, "subject": "one"},
+        {"id": "e2", "type": "email", "risk_score": 92, "subject": "TWO high"},
+        {"id": "e3", "type": "email", "risk_score": 70, "subject": "three"},
+        {"id": "d1", "type": "domain"},
+        {"id": "d2", "type": "domain"},
+    ]
+    edges = [
+        {"source": "e1", "target": "d1", "type": "LINKS_TO"},
+        {"source": "e2", "target": "d1", "type": "LINKS_TO"},
+        {"source": "e2", "target": "d2", "type": "LINKS_TO"},
+        {"source": "e3", "target": "d2", "type": "LINKS_TO"},
+    ]
+    clusters = compute_clusters(nodes, edges)
+    assert len(clusters) == 1
+    c = clusters[0]
+    assert c["email_count"] == 3
+    assert c["highest_risk_score"] == 92
+    assert c["representative_subject"] == "TWO high"
+    assert set(c["member_email_ids"]) == {"e1", "e2", "e3"}
+
+
+def test_compute_clusters_multiple_independent_clusters_ordered_by_risk():
+    nodes = [
+        # cluster A (max risk 70)
+        {"id": "ea1", "type": "email", "risk_score": 70, "subject": "A1"},
+        {"id": "ea2", "type": "email", "risk_score": 55, "subject": "A2"},
+        {"id": "ipA", "type": "ip"},
+        # cluster B (max risk 95)
+        {"id": "eb1", "type": "email", "risk_score": 95, "subject": "B1"},
+        {"id": "eb2", "type": "email", "risk_score": 60, "subject": "B2"},
+        {"id": "ipB", "type": "ip"},
+    ]
+    edges = [
+        {"source": "ea1", "target": "ipA", "type": "ORIGINATED_FROM"},
+        {"source": "ea2", "target": "ipA", "type": "ORIGINATED_FROM"},
+        {"source": "eb1", "target": "ipB", "type": "ORIGINATED_FROM"},
+        {"source": "eb2", "target": "ipB", "type": "ORIGINATED_FROM"},
+    ]
+    clusters = compute_clusters(nodes, edges)
+    assert [c["cluster_id"] for c in clusters] == ["CLU-01", "CLU-02"]
+    # Highest-risk cluster first
+    assert clusters[0]["highest_risk_score"] == 95
+    assert clusters[1]["highest_risk_score"] == 70
 
 
 def _make_mock_driver():
@@ -103,16 +185,22 @@ def test_find_related_emails_returns_matches(mock_get_driver):
         "id": "related-email-1",
         "subject": "Another Phish",
         "verdict": "Phishing/Scam",
-        "shared_via": "domain",
-        "shared_value": "evil.com",
+        "shared_indicators": [{"type": "domain", "value": "evil.com"}],
     }
     mock_session.run.return_value = [mock_record]
 
     result = find_related_emails("test-email-hash")
 
     assert result["campaign_size"] == 1
-    assert result["related_emails"][0]["id"] == "related-email-1"
-    assert result["related_emails"][0]["shared_via"] == "domain"
+    rel = result["related_emails"][0]
+    assert rel["id"] == "related-email-1"
+    # Backward compat fields derived from first indicator
+    assert rel["shared_via"] == "domain"
+    assert rel["shared_value"] == "evil.com"
+    # New multi-indicator fields
+    assert len(rel["shared_indicators"]) == 1
+    assert rel["shared_indicators"][0] == {"type": "domain", "value": "evil.com"}
+    assert rel["correlation_strength"] == "weak"
 
 
 @patch("app.graph.neo4j_client.get_driver")
@@ -195,17 +283,73 @@ def test_find_related_emails_via_upi_or_wallet(mock_get_driver):
         "id": "gang-email-2",
         "subject": "Tax Refund Phish",
         "verdict": "Phishing/Scam",
-        "shared_via": "upi",
-        "shared_value": "gang.collector@okhdfcbank",
+        "shared_indicators": [{"type": "upi", "value": "gang.collector@okhdfcbank"}],
     }
     mock_session.run.return_value = [mock_record]
 
     result = find_related_emails("gang-email-1")
 
     assert result["campaign_size"] == 1
-    assert result["related_emails"][0]["id"] == "gang-email-2"
-    assert result["related_emails"][0]["shared_via"] == "upi"
-    assert result["related_emails"][0]["shared_value"] == "gang.collector@okhdfcbank"
+    rel = result["related_emails"][0]
+    assert rel["id"] == "gang-email-2"
+    assert rel["shared_via"] == "upi"
+    assert rel["shared_value"] == "gang.collector@okhdfcbank"
+    assert rel["shared_indicators"][0] == {"type": "upi", "value": "gang.collector@okhdfcbank"}
+    assert rel["correlation_strength"] == "weak"
+
+
+@patch("app.graph.neo4j_client.get_driver")
+def test_find_related_emails_multi_indicator_strength(mock_get_driver):
+    """When an email shares multiple indicator types, response should list all with correct strength."""
+    mock_driver, mock_session = _make_mock_driver()
+    mock_get_driver.return_value = mock_driver
+
+    # Simulate Neo4j returning pre-aggregated indicators (as the new COLLECT query would)
+    mock_record = {
+        "id": "multi-link-email",
+        "subject": "Same Campaign",
+        "verdict": "Phishing/Scam",
+        "shared_indicators": [
+            {"type": "ip", "value": "1.2.3.4"},
+            {"type": "domain", "value": "evil.com"},
+            {"type": "template_hash", "value": "abc123"},
+        ],
+    }
+    mock_session.run.return_value = [mock_record]
+
+    result = find_related_emails("target-email")
+
+    assert result["campaign_size"] == 1
+    rel = result["related_emails"][0]
+    assert len(rel["shared_indicators"]) == 3
+    assert rel["correlation_strength"] == "strong"
+    # Backward compat uses first indicator
+    assert rel["shared_via"] == "ip"
+    assert rel["shared_value"] == "1.2.3.4"
+
+
+@patch("app.graph.neo4j_client.get_driver")
+def test_find_related_emails_moderate_strength(mock_get_driver):
+    """Two shared indicators → moderate correlation strength."""
+    mock_driver, mock_session = _make_mock_driver()
+    mock_get_driver.return_value = mock_driver
+
+    mock_record = {
+        "id": "two-link-email",
+        "subject": "Shared IP and Domain",
+        "verdict": "Suspicious",
+        "shared_indicators": [
+            {"type": "ip", "value": "5.6.7.8"},
+            {"type": "domain", "value": "phish.net"},
+        ],
+    }
+    mock_session.run.return_value = [mock_record]
+
+    result = find_related_emails("another-email")
+
+    rel = result["related_emails"][0]
+    assert rel["correlation_strength"] == "moderate"
+    assert len(rel["shared_indicators"]) == 2
 
 
 @patch("app.graph.neo4j_client.get_driver")

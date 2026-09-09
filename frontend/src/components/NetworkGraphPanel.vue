@@ -34,17 +34,24 @@
       <!-- Related emails list -->
       <div v-if="relatedEmails.length > 0" class="related-list">
         <div class="related-intro">
-          <span>
-            Linked to <strong>{{ relatedEmails.length }}</strong> other analyzed {{ relatedEmails.length === 1 ? 'report' : 'reports' }}
-            <template v-if="primaryLink"> via a shared {{ primaryLink.type }}
-              (<code class="shared-val">{{ primaryLink.value }}</code>)
-            </template>
-          </span>
+          <span>{{ relationshipSummary?.text }}</span>
         </div>
         <div v-for="(rel, idx) in relatedEmails" :key="idx" class="related-email-row">
           <span :class="['badge', getRelBadgeClass(rel.verdict)]">{{ rel.verdict }}</span>
           <span class="related-subject" :title="rel.subject">{{ rel.subject || '(No subject)' }}</span>
-          <span class="related-link-type">via {{ rel.shared_via }}</span>
+          <span :class="['strength-badge', `strength-${rel.correlation_strength || 'weak'}`]">
+            {{ rel.correlation_strength || 'weak' }}
+          </span>
+          <span v-if="rel.shared_indicators && rel.shared_indicators.length" class="indicator-pills">
+            <span v-for="(ind, j) in rel.shared_indicators" :key="j" class="indicator-pill" :title="ind.value">
+              {{ indicatorLabel(ind.type) }}
+            </span>
+          </span>
+          <span v-else-if="rel.shared_via" class="indicator-pills">
+            <span class="indicator-pill" :title="rel.shared_value">
+              {{ indicatorLabel(rel.shared_via) }}
+            </span>
+          </span>
         </div>
       </div>
 
@@ -139,10 +146,10 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, watch, onBeforeUnmount, nextTick } from 'vue'
+import { ref, computed, onMounted, watch, nextTick } from 'vue'
 import { Network, Share2, Info, Maximize2, List } from 'lucide-vue-next'
-import { Network as VisNetwork, DataSet } from 'vis-network/standalone'
 import { getGraph } from '../api/client'
+import { useNetworkGraph } from '../composables/useNetworkGraph'
 
 const props = defineProps({
   emailHash: {
@@ -172,8 +179,8 @@ const loading = ref(true)
 const error = ref(null)
 const hasNodes = ref(true)
 const showGraph = ref(false)
-let networkInstance = null
-let resizeObserver = null
+
+const graphCtl = useNetworkGraph({ height: '380px', resize: true })
 
 // Part D — computed helpers for summary vs graph view
 const isBatchMode = computed(() => {
@@ -213,21 +220,86 @@ function getRelBadgeClass(verdict) {
   return 'badge-phish'
 }
 
+const indicatorTypeLabels = {
+  ip: 'IP',
+  domain: 'Domain',
+  upi: 'UPI',
+  wallet: 'Wallet',
+  attachment_hash: 'File Hash',
+  template_hash: 'Template',
+}
+
+const indicatorDescriptions = {
+  ip: 'the same IP address',
+  domain: 'the same domain',
+  upi: 'the same UPI ID',
+  wallet: 'the same crypto wallet',
+  attachment_hash: 'an identical attachment',
+  template_hash: 'an identical email template',
+}
+
+function indicatorLabel(type) {
+  return indicatorTypeLabels[type] || type
+}
+
+function formatIndicatorTypes(types) {
+  const descriptions = types.map(t => indicatorDescriptions[t] || `shared ${t}`)
+  if (descriptions.length === 0) return 'shared infrastructure'
+  if (descriptions.length === 1) return descriptions[0]
+  if (descriptions.length === 2) return `${descriptions[0]} and ${descriptions[1]}`
+  return `${descriptions.slice(0, -1).join(', ')}, and ${descriptions[descriptions.length - 1]}`
+}
+
+const relationshipSummary = computed(() => {
+  const emails = relatedEmails.value
+  if (!emails || emails.length === 0) return null
+
+  // Determine aggregate strength
+  const strengths = emails.map(e => e.correlation_strength || 'weak')
+  let overallStrength = 'weak'
+  if (strengths.includes('strong')) {
+    overallStrength = 'strong'
+  } else if (strengths.includes('moderate')) {
+    overallStrength = 'moderate'
+  }
+
+  const strengthPhrases = {
+    strong: 'strongly connected',
+    moderate: 'connected',
+    weak: 'weakly connected',
+  }
+  const phrase = strengthPhrases[overallStrength] || 'connected'
+
+  // Collect distinct indicator types across all related emails
+  const typeSet = new Set()
+  for (const rel of emails) {
+    if (rel.shared_indicators && rel.shared_indicators.length) {
+      for (const ind of rel.shared_indicators) {
+        if (ind.type) typeSet.add(ind.type)
+      }
+    } else if (rel.shared_via) {
+      typeSet.add(rel.shared_via)
+    }
+  }
+
+  const count = emails.length
+  const reportWord = count === 1 ? 'other analyzed report' : 'other analyzed reports'
+  const sharedText = formatIndicatorTypes(Array.from(typeSet))
+
+  return {
+    overallStrength,
+    text: `This email is ${phrase} to ${count} ${reportWord} — they share ${sharedText}.`,
+  }
+})
+
 async function toggleGraphView(visible) {
   showGraph.value = visible
   if (visible) {
     await nextTick()
     setTimeout(() => {
-      if (networkInstance) {
-        networkInstance.setSize('100%', '380px')
-        networkInstance.redraw()
-        networkInstance.fit({
-          animation: {
-            duration: 350,
-            easingFunction: 'easeInOutQuad',
-          },
-        })
-      } else {
+      graphCtl.setSize()
+      graphCtl.fit()
+      if (!hasNodes.value) {
         loadAndRenderGraph()
       }
     }, 60)
@@ -235,84 +307,7 @@ async function toggleGraphView(visible) {
 }
 
 function fitGraph() {
-  if (networkInstance) {
-    networkInstance.fit({
-      animation: {
-        duration: 400,
-        easingFunction: 'easeInOutQuad',
-      },
-    })
-  }
-}
-
-function getNodeColor(node) {
-  if (node.type === 'email') {
-    if (node.verdict === 'Safe') {
-      return { 
-        background: '#F0FDF4', 
-        border: '#15803D', 
-        highlight: { background: '#DCFCE7', border: '#15803D' },
-        hover: { background: '#DCFCE7', border: '#15803D' }
-      }
-    } else if (node.verdict === 'Suspicious') {
-      return { 
-        background: '#FFFBEB', 
-        border: '#B45309', 
-        highlight: { background: '#FEF3C7', border: '#B45309' },
-        hover: { background: '#FEF3C7', border: '#B45309' }
-      }
-    } else {
-      return { 
-        background: '#FEF2F2', 
-        border: '#B91C1C', 
-        highlight: { background: '#FEE2E2', border: '#B91C1C' },
-        hover: { background: '#FEE2E2', border: '#B91C1C' }
-      }
-    }
-  } else if (node.type === 'domain') {
-    return { 
-      background: '#EFF6FF', 
-      border: '#1D4ED8', 
-      highlight: { background: '#DBEAFE', border: '#1D4ED8' },
-      hover: { background: '#DBEAFE', border: '#1D4ED8' }
-    }
-  } else if (node.type === 'upi') {
-    return { 
-      background: '#F5F3FF', 
-      border: '#7C3AED', 
-      highlight: { background: '#EDE9FE', border: '#7C3AED' },
-      hover: { background: '#EDE9FE', border: '#7C3AED' }
-    }
-  } else if (node.type === 'wallet') {
-    return { 
-      background: '#FFFBEB', 
-      border: '#D97706', 
-      highlight: { background: '#FEF3C7', border: '#D97706' },
-      hover: { background: '#FEF3C7', border: '#D97706' }
-    }
-  } else if (node.type === 'attachment_hash') {
-    return { 
-      background: '#FFF1F2', 
-      border: '#E11D48', 
-      highlight: { background: '#FFE4E6', border: '#E11D48' },
-      hover: { background: '#FFE4E6', border: '#E11D48' }
-    }
-  } else if (node.type === 'template_hash') {
-    return { 
-      background: '#F0FDFA', 
-      border: '#0D9488', 
-      highlight: { background: '#CCFBF1', border: '#0D9488' },
-      hover: { background: '#CCFBF1', border: '#0D9488' }
-    }
-  } else {
-    // IP
-    return { 
-      background: '#F3F4F6', 
-      border: '#4B5563', 
-      highlight: { background: '#E5E7EB', border: '#374151' },
-      hover: { background: '#E5E7EB', border: '#374151' }
-    }
-  }
+  graphCtl.fit()
 }
 
 async function loadAndRenderGraph() {
@@ -328,7 +323,6 @@ async function loadAndRenderGraph() {
       data = await getGraph(props.emailHash, 2)
     }
     const nodesRaw = data.nodes || []
-    const edgesRaw = data.edges || []
 
     hasNodes.value = nodesRaw.length > 0
 
@@ -338,171 +332,10 @@ async function loadAndRenderGraph() {
 
     if (!networkContainer.value || nodesRaw.length === 0) return
 
-    // Transform nodes
-    const visNodes = nodesRaw.map(n => {
-      const colorScheme = getNodeColor(n)
-      const isCurrent = n.id === props.emailHash
-      let labelText = n.label || n.id
-      if (n.type === 'email' && labelText.length > 28) {
-        labelText = labelText.slice(0, 25) + '...'
-      }
-
-      let nodeShape = 'box'
-      if (n.type === 'domain') nodeShape = 'ellipse'
-      else if (n.type === 'ip') nodeShape = 'database'
-      else if (n.type === 'upi') nodeShape = 'diamond'
-      else if (n.type === 'wallet') nodeShape = 'hexagon'
-      else if (n.type === 'attachment_hash') nodeShape = 'box'
-      else if (n.type === 'template_hash') nodeShape = 'box'
-
-      return {
-        id: n.id,
-        label: labelText,
-        title: `${n.type.toUpperCase()}: ${n.label || n.id}${n.verdict ? ` [${n.verdict}]` : ''}`,
-        shape: nodeShape,
-        margin: { top: 8, bottom: 8, left: 12, right: 12 },
-        borderWidth: isCurrent ? 3 : 1.5,
-        color: colorScheme,
-        font: {
-          face: 'Inter, system-ui, -apple-system, sans-serif',
-          size: isCurrent ? 13 : 12,
-          color: '#111827',
-          bold: isCurrent,
-        },
-        shadow: {
-          enabled: true,
-          color: 'rgba(0,0,0,0.06)',
-          size: 4,
-          x: 1,
-          y: 2,
-        },
-      }
+    graphCtl.render(networkContainer.value, data, {
+      height: '380px',
+      highlightId: props.emailHash || null,
     })
-
-    // Transform edges
-    const visEdges = edgesRaw.map((e, idx) => ({
-      id: `edge-${idx}`,
-      from: e.source,
-      to: e.target,
-      label: e.type,
-      arrows: {
-        to: { enabled: true, scaleFactor: 0.7 }
-      },
-      color: { 
-        color: '#9CA3AF', 
-        highlight: '#1D4ED8',
-        hover: '#1D4ED8',
-        opacity: 0.9,
-      },
-      font: { 
-        size: 10, 
-        color: '#6B7280', 
-        face: 'Inter, system-ui, sans-serif',
-        align: 'horizontal',
-        background: '#FFFFFF',
-        strokeWidth: 0,
-      },
-      smooth: { 
-        type: 'cubicBezier', 
-        roundness: 0.25 
-      },
-    }))
-
-    const networkData = {
-      nodes: new DataSet(visNodes),
-      edges: new DataSet(visEdges),
-    }
-
-    const options = {
-      autoResize: true,
-      height: '100%',
-      width: '100%',
-      layout: {
-        improvedLayout: true,
-      },
-      physics: {
-        enabled: true,
-        solver: 'barnesHut',
-        barnesHut: {
-          gravitationalConstant: -2500,
-          centralGravity: 0.25,
-          springLength: 130,
-          springConstant: 0.04,
-          damping: 0.09,
-          avoidOverlap: 0.5,
-        },
-        stabilization: {
-          enabled: true,
-          iterations: 200,
-          updateInterval: 25,
-          fit: true,
-        },
-      },
-      interaction: {
-        hover: true,
-        hoverConnectedEdges: true,
-        tooltipDelay: 150,
-        zoomView: true,
-        dragView: true,
-      },
-    }
-
-    if (networkInstance) {
-      networkInstance.destroy()
-      networkInstance = null
-    }
-
-    networkInstance = new VisNetwork(networkContainer.value, networkData, options)
-
-    // Ensure proper sizing, fit, and freeze physics once stabilization completes
-    networkInstance.once('stabilizationIterationsDone', () => {
-      if (networkInstance) {
-        networkInstance.setOptions({ physics: false })
-        networkInstance.fit({
-          animation: {
-            duration: 350,
-            easingFunction: 'easeInOutQuad',
-          },
-        })
-      }
-    })
-
-    networkInstance.once('stabilized', () => {
-      if (networkInstance) {
-        networkInstance.setOptions({ physics: false })
-      }
-    })
-
-    networkInstance.once('afterDrawing', () => {
-      if (networkInstance) {
-        networkInstance.fit()
-      }
-    })
-
-    // Fallback timer to guarantee fit after DOM settles
-    setTimeout(() => {
-      if (networkInstance) {
-        networkInstance.redraw()
-        networkInstance.fit()
-      }
-    }, 250)
-
-    // Set up ResizeObserver to handle container size shifts
-    if (!resizeObserver && window.ResizeObserver && networkContainer.value) {
-      resizeObserver = new ResizeObserver((entries) => {
-        for (const entry of entries) {
-          if (entry.contentRect.width > 20 && entry.contentRect.height > 20) {
-            if (networkInstance) {
-              networkInstance.setSize('100%', '380px')
-              networkInstance.redraw()
-              networkInstance.fit()
-            }
-          }
-        }
-      })
-      resizeObserver.observe(networkContainer.value)
-    }
-
   } catch (err) {
     console.error('Failed to load graph', err)
     error.value = 'Could not load graph visualization from server.'
@@ -517,17 +350,6 @@ onMounted(() => {
 watch([() => props.emailHash, () => props.graphData], () => {
   loadAndRenderGraph()
 }, { deep: true })
-
-onBeforeUnmount(() => {
-  if (resizeObserver) {
-    resizeObserver.disconnect()
-    resizeObserver = null
-  }
-  if (networkInstance) {
-    networkInstance.destroy()
-    networkInstance = null
-  }
-})
 </script>
 
 <style scoped>
@@ -812,5 +634,55 @@ onBeforeUnmount(() => {
 
 .graph-hidden {
   display: none !important;
+}
+
+/* Phase 17 — Multi-indicator pills */
+.indicator-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.indicator-pill {
+  display: inline-block;
+  background-color: var(--accent-light, #EFF6FF);
+  color: var(--accent, #1D4ED8);
+  border: 1px solid var(--accent, #1D4ED8);
+  border-radius: 9999px;
+  padding: 1px 8px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  white-space: nowrap;
+  letter-spacing: 0.02em;
+}
+
+.strength-badge {
+  display: inline-block;
+  border-radius: 9999px;
+  padding: 1px 8px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  white-space: nowrap;
+  text-transform: capitalize;
+  flex-shrink: 0;
+}
+
+.strength-weak {
+  background-color: #F3F4F6;
+  color: #6B7280;
+  border: 1px solid #D1D5DB;
+}
+
+.strength-moderate {
+  background-color: #FFFBEB;
+  color: #B45309;
+  border: 1px solid #F59E0B;
+}
+
+.strength-strong {
+  background-color: #FEF2F2;
+  color: #B91C1C;
+  border: 1px solid #EF4444;
 }
 </style>

@@ -175,6 +175,23 @@ def _extract_attachment_hashes(attachments_raw: list[bytes]) -> list[str]:
     return sorted(list(hashes))
 
 
+def _extract_attachment_hashes_with_names(
+    attachments_raw: list[bytes], filenames: list[str]
+) -> list[dict[str, str]]:
+    """Compute SHA-256 hash for each attachment, paired with its filename.
+
+    Returns a list of {"hash": str, "filename": str} dicts.
+    If filenames list is shorter than attachments_raw, missing names default to "".
+    """
+    results: list[dict[str, str]] = []
+    for idx, raw in enumerate(attachments_raw):
+        if raw:
+            h = hashlib.sha256(raw).hexdigest()
+            fn = filenames[idx] if idx < len(filenames) else ""
+            results.append({"hash": h, "filename": fn})
+    return results
+
+
 def _compute_template_hash(html_body: str) -> str | None:
     """Compute structural SHA-256 hash of the HTML template skeleton."""
     if not html_body or not html_body.strip():
@@ -201,6 +218,7 @@ def extract_fingerprints(
     urls: list[str],
     attachments_raw: list[bytes],
     html_body: str = "",
+    attachment_filenames: list[str] | None = None,
 ) -> dict[str, Any]:
     """Extract financial and technical fingerprints from email content.
 
@@ -210,13 +228,16 @@ def extract_fingerprints(
             "wallet_addresses": list[str],
             "possible_bank_accounts": list[str],
             "attachment_hashes": list[str],
+            "attachment_hash_details": list[dict],  # [{"hash": str, "filename": str}, ...]
             "template_structure_hash": str | None,
         }
     """
+    fnames = attachment_filenames or []
     return {
         "upi_ids": _extract_upi_ids(body_text, urls),
         "wallet_addresses": _extract_crypto_wallets(body_text),
         "possible_bank_accounts": _extract_bank_accounts(body_text),
         "attachment_hashes": _extract_attachment_hashes(attachments_raw),
+        "attachment_hash_details": _extract_attachment_hashes_with_names(attachments_raw, fnames),
         "template_structure_hash": _compute_template_hash(html_body),
     }

@@ -229,3 +229,62 @@ def test_history_not_found():
 def test_report_not_found():
     response = client.get("/api/reports/nonexistent_hash_123.pdf")
     assert response.status_code == 404
+
+
+def test_attachment_intelligence_endpoint():
+    """Test GET /api/graph/attachments returns attachment intelligence data."""
+    mock_intel = {
+        "reused_attachments": [
+            {
+                "hash": "abc123hash",
+                "filenames": ["receipt.pdf", "invoice.pdf"],
+                "seen_in_count": 2,
+                "emails": [{"id": "email1", "subject": "Subj 1", "verdict": "Phishing/Scam"}],
+            }
+        ],
+        "total_attachments": 3,
+        "total_unique_attachments": 2,
+        "total_reused": 1,
+    }
+    with patch("app.api.routes_graph.get_attachment_intelligence", return_value=mock_intel) as mock_get:
+        response = client.get("/api/graph/attachments?hashes=hash1,hash2,hash3")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["total_attachments"] == 3
+        assert data["total_unique_attachments"] == 2
+        assert data["total_reused"] == 1
+        assert len(data["reused_attachments"]) == 1
+        assert data["reused_attachments"][0]["filenames"] == ["receipt.pdf", "invoice.pdf"]
+        mock_get.assert_called_once_with(["hash1", "hash2", "hash3"])
+
+
+def test_graph_related_endpoint_multi_indicator():
+    """Test GET /api/graph/{email_hash}/related returns multi-indicator and correlation_strength fields."""
+    mock_campaign = {
+        "related_emails": [
+            {
+                "id": "rel123",
+                "subject": "Attack email",
+                "verdict": "Phishing/Scam",
+                "shared_via": "ip",
+                "shared_value": "185.220.101.5",
+                "shared_indicators": [
+                    {"type": "ip", "value": "185.220.101.5"},
+                    {"type": "domain", "value": "evil.com"},
+                    {"type": "attachment_hash", "value": "hash999"},
+                ],
+                "correlation_strength": "strong",
+            }
+        ],
+        "campaign_size": 1,
+    }
+    with patch("app.api.routes_graph.find_related_emails", return_value=mock_campaign):
+        response = client.get("/api/graph/target_hash_123/related")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["campaign_size"] == 1
+        rel = data["related_emails"][0]
+        assert rel["correlation_strength"] == "strong"
+        assert len(rel["shared_indicators"]) == 3
+        assert rel["shared_via"] == "ip"
+

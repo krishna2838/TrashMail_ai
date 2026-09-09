@@ -188,6 +188,7 @@ def parse_email(raw_bytes: bytes) -> dict[str, Any]:
     attachments: list[str] = []
     suspicious_attachments: list[str] = []
     attachments_raw: list[bytes] = []
+    filenames_for_raw: list[str] = []  # aligned 1:1 with attachments_raw
 
     for part in msg.walk():
         fn = part.get_filename()
@@ -196,6 +197,7 @@ def parse_email(raw_bytes: bytes) -> dict[str, Any]:
             payload = part.get_payload(decode=True)
             if isinstance(payload, bytes) and payload:
                 attachments_raw.append(payload)
+                filenames_for_raw.append(str(fn).strip() if fn else "")
 
         if fn:
             fn_clean = str(fn).strip()
@@ -209,6 +211,7 @@ def parse_email(raw_bytes: bytes) -> dict[str, Any]:
         urls=urls,
         attachments_raw=attachments_raw,
         html_body=html_body,
+        attachment_filenames=filenames_for_raw,
     )
 
     # Authentication
@@ -258,5 +261,6 @@ def parse_email(raw_bytes: bytes) -> dict[str, Any]:
         "wallet_addresses": fingerprints["wallet_addresses"],
         "possible_bank_accounts": fingerprints["possible_bank_accounts"],
         "attachment_hashes": fingerprints["attachment_hashes"],
+        "attachment_hash_details": fingerprints["attachment_hash_details"],
         "template_structure_hash": fingerprints["template_structure_hash"],
     }

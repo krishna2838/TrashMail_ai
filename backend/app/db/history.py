@@ -95,8 +95,55 @@ def save_investigation(analysis: dict[str, Any]) -> None:
         logger.error("Failed to save investigation to SQLite history: %s", exc)
 
 
+def _extract_indicator_fields(full_json: str | None) -> dict[str, Any]:
+    """Extract a small set of indicator fields from a stored full_result_json blob.
+
+    Safe against missing/malformed data on older records — returns defaults on failure.
+    """
+    result: dict[str, Any] = {
+        "top_domain": None,
+        "origin_country": None,
+        "campaign_size": 0,
+    }
+    if not full_json:
+        return result
+    try:
+        data = json.loads(full_json)
+    except Exception:
+        return result
+    if not isinstance(data, dict):
+        return result
+
+    domains = data.get("domains")
+    if isinstance(domains, list) and domains:
+        first = domains[0]
+        if isinstance(first, str):
+            result["top_domain"] = first
+        elif isinstance(first, dict):
+            result["top_domain"] = first.get("domain") or first.get("name")
+
+    origin_geo = data.get("origin_geo")
+    if isinstance(origin_geo, dict):
+        country = origin_geo.get("country")
+        if country:
+            result["origin_country"] = country
+
+    campaign = data.get("campaign")
+    if isinstance(campaign, dict):
+        try:
+            result["campaign_size"] = int(campaign.get("campaign_size", 0) or 0)
+        except (TypeError, ValueError):
+            result["campaign_size"] = 0
+
+    return result
+
+
 def list_investigations(limit: int = 50) -> list[dict[str, Any]]:
-    """Return recent investigation summaries (without heavy full_result_json)."""
+    """Return recent investigation summaries plus lightweight indicator fields.
+
+    Reads a few extra keys out of each row's already-stored full_result_json —
+    no additional Neo4j or heavy computation is triggered.
+    """
     try:
         with Session(engine) as session:
             statement = (
@@ -107,6 +154,7 @@ def list_investigations(limit: int = 50) -> list[dict[str, Any]]:
                     Investigation.verdict,
                     Investigation.risk_score,
                     Investigation.analyzed_at,
+                    Investigation.full_result_json,
                 )
                 .order_by(Investigation.analyzed_at.desc())
                 .limit(limit)
@@ -115,8 +163,8 @@ def list_investigations(limit: int = 50) -> list[dict[str, Any]]:
 
             investigations = []
             for row in results:
-                # row can be a tuple or row object
-                r_id, r_subject, r_sender, r_verdict, r_risk, r_time = row
+                r_id, r_subject, r_sender, r_verdict, r_risk, r_time, r_json = row
+                indicators = _extract_indicator_fields(r_json)
                 investigations.append({
                     "id": r_id,
                     "email_hash": r_id,
@@ -125,6 +173,9 @@ def list_investigations(limit: int = 50) -> list[dict[str, Any]]:
                     "verdict": r_verdict,
                     "risk_score": r_risk,
                     "analyzed_at": r_time.isoformat() if hasattr(r_time, "isoformat") else str(r_time),
+                    "top_domain": indicators["top_domain"],
+                    "origin_country": indicators["origin_country"],
+                    "campaign_size": indicators["campaign_size"],
                 })
             return investigations
     except Exception as exc:

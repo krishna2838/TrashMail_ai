@@ -10,6 +10,11 @@ const routes = [
     component: AnalyzeView,
   },
   {
+    path: '/dashboard',
+    name: 'dashboard',
+    component: () => import('../views/DashboardView.vue'),
+  },
+  {
     path: '/results',
     name: 'results',
     component: ResultsView,
@@ -23,6 +28,16 @@ const routes = [
     path: '/history',
     name: 'history',
     component: HistoryView,
+  },
+  {
+    path: '/clusters',
+    name: 'clusters',
+    component: () => import('../views/ClustersView.vue'),
+  },
+  {
+    path: '/reports',
+    name: 'reports',
+    component: () => import('../views/ReportsView.vue'),
   },
 ]
 

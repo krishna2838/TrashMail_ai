@@ -50,6 +50,52 @@ def test_save_and_list_investigations():
     assert items[0]["sender"] == "attacker@evil.com"
     assert items[0]["verdict"] == "Phishing/Scam"
     assert items[0]["risk_score"] == 85
+    # New indicator fields default to None/0 when the analysis dict didn't
+    # include domains / origin_geo / campaign.
+    assert items[0]["top_domain"] is None
+    assert items[0]["origin_country"] is None
+    assert items[0]["campaign_size"] == 0
+
+
+def test_list_investigations_extracts_indicator_fields():
+    analysis = {
+        "email_hash": "indicator_hash",
+        "subject": "With indicators",
+        "sender": "x@bad.io",
+        "verdict": "Phishing/Scam",
+        "risk_score": 90,
+        "domains": ["bad.io", "cdn.bad.io"],
+        "origin_geo": {"country": "Russia", "city": "Moscow"},
+        "campaign": {"campaign_size": 4, "related_emails": []},
+    }
+    save_investigation(analysis)
+
+    items = list_investigations()
+    assert len(items) == 1
+    item = items[0]
+    assert item["top_domain"] == "bad.io"
+    assert item["origin_country"] == "Russia"
+    assert item["campaign_size"] == 4
+
+
+def test_list_investigations_handles_partial_indicator_data():
+    """Older/partial records must not crash — missing sections → safe defaults."""
+    partial = {
+        "email_hash": "partial_hash",
+        "subject": "Partial",
+        "sender": "y@example.com",
+        "verdict": "Suspicious",
+        "risk_score": 55,
+        "domains": [],
+        "origin_geo": {},
+    }
+    save_investigation(partial)
+
+    items = list_investigations()
+    item = next(i for i in items if i["id"] == "partial_hash")
+    assert item["top_domain"] is None
+    assert item["origin_country"] is None
+    assert item["campaign_size"] == 0
 
 
 def test_get_investigation_found():
