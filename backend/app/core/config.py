@@ -19,8 +19,8 @@ class Settings(BaseSettings):
     ]
     VIRUSTOTAL_API_KEY: str = ""
     NEO4J_URI: str = "bolt://localhost:7687"
-    NEO4J_USER: str = "neo4j"
-    NEO4J_PASSWORD: str = "trashmail123"
+    NEO4J_USER: str = "neo5j"
+    NEO4J_PASSWORD: str = "trashmail8856"
     OLLAMA_URL: str = "http://localhost:11434"
     OLLAMA_PRIMARY_MODEL: str = "qwen2.5:7b"
     OLLAMA_FALLBACK_MODEL: str = "qwen2.5:3b"
