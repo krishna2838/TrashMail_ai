@@ -15,6 +15,13 @@ zero cloud dependencies or rate limits.
 
 ---
 
+## 🎥 Project Demo
+
+Watch TraceMail AI in action:
+
+https://github.com/user-attachments/assets/7d804f9f-574d-42a1-b947-ef888653cd62
+
+
 ## System Architecture
 
 ```mermaid
